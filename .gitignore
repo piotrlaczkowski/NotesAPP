@@ -96,6 +96,7 @@ FINAL_FIXES.md
 PROJECT_GENERATED.md
 PROJECT_STATUS.md
 GIT_SETUP_COMPLETE.md
+GIT_STATUS.md
 CHECK_GIT_SETUP.sh
 .git/config.template
 
@@ -104,6 +105,31 @@ CHECK_GIT_SETUP.sh
 .vscode/
 *.sublime-project
 *.sublime-workspace
+
+# Cursor IDE cache
+.cursor/
+cursor-cache/
+*.cursor-settings
+
+# Additional cache and temporary directories
+*.cache/
+.cache/
+tmp/
+temp/
+
+# Frameworks directory (may contain dependencies)
+Frameworks/
+
+# Additional Swift Package Manager artifacts
+.checkouts/
+
+# macOS additional
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
 
 # Keep these (explicitly not ignored)
 !*.swift
