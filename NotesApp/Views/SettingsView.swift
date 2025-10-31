@@ -1,0 +1,456 @@
+import SwiftUI
+
+struct SettingsView: View {
+    @StateObject private var viewModel = SettingsViewModel()
+    @StateObject private var statusViewModel = SettingsStatusViewModel()
+    @AppStorage("selectedModel") private var selectedModel = "LFM2-1.2B"
+    @AppStorage("autoSyncEnabled") private var autoSyncEnabled = true
+    @AppStorage("syncInterval") private var syncInterval = 15
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Status Overview") {
+                    SettingsStatusIndicator(
+                        status: statusViewModel.llmStatus,
+                        title: "LLM Model",
+                        description: llmStatusDescription
+                    )
+                    
+                    SettingsStatusIndicator(
+                        status: statusViewModel.githubAuthStatus,
+                        title: "GitHub Authentication",
+                        description: githubAuthDescription
+                    )
+                    
+                    SettingsStatusIndicator(
+                        status: statusViewModel.githubRepoStatus,
+                        title: "GitHub Repository",
+                        description: githubRepoDescription
+                    )
+                    
+                    SettingsStatusIndicator(
+                        status: statusViewModel.networkStatus,
+                        title: "Network Connection",
+                        description: networkStatusDescription
+                    )
+                    
+                    if statusViewModel.pendingSyncCount > 0 {
+                        HStack {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .foregroundColor(.orange)
+                            Text("\(statusViewModel.pendingSyncCount) notes pending sync")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                
+                Section("LLM Model") {
+                    Picker("Model", selection: $selectedModel) {
+                        ForEach(viewModel.availableModels, id: \.self) { model in
+                            Text(model).tag(model)
+                        }
+                    }
+                    .onChange(of: selectedModel) { _, newValue in
+                        Task {
+                            await viewModel.selectModel(newValue)
+                        }
+                    }
+                    
+                    if let status = viewModel.modelStatus {
+                        HStack {
+                            Text("Status:")
+                            Spacer()
+                            Text(status)
+                                .foregroundColor(status.contains("✓") ? .green : (status.contains("✗") ? .red : .secondary))
+                                .font(.subheadline)
+                        }
+                    }
+                    
+                    if viewModel.isDownloading {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ProgressView(value: viewModel.downloadProgress)
+                            Text("Downloading... \(Int(viewModel.downloadProgress * 100))%")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("This may take several minutes depending on model size and connection speed.")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    } else if viewModel.needsDownload {
+                        Button {
+                            Task {
+                                await viewModel.downloadModel(selectedModel)
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: "arrow.down.circle.fill")
+                                Text("Download Model")
+                            }
+                        }
+                        
+                        // Show model size info
+                        if let config = ModelConfig.config(for: selectedModel) {
+                            Text("Size: \(config.size)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Button("Reload Model") {
+                            Task {
+                                await viewModel.selectModel(selectedModel)
+                            }
+                        }
+                    }
+                }
+                .alert("Download Error", isPresented: $viewModel.showError) {
+                    Button("OK") {
+                        viewModel.showError = false
+                    }
+                    Button("Retry") {
+                        Task {
+                            await viewModel.downloadModel(selectedModel)
+                        }
+                    }
+                } message: {
+                    if let error = viewModel.errorMessage {
+                        Text(error)
+                    }
+                }
+                
+                Section("GitHub") {
+                    NavigationLink("Authentication") {
+                        GitHubAuthView()
+                    }
+                    
+                    NavigationLink("Repository") {
+                        GitHubRepositoryView()
+                    }
+                    
+                    Toggle("Auto Sync", isOn: $autoSyncEnabled)
+                    
+                    if autoSyncEnabled {
+                        Picker("Sync Interval (minutes)", selection: $syncInterval) {
+                            Text("5").tag(5)
+                            Text("15").tag(15)
+                            Text("30").tag(30)
+                            Text("60").tag(60)
+                        }
+                    }
+                    
+                    Button("Sync Now") {
+                        Task {
+                            await RepositoryManager.shared.sync()
+                        }
+                    }
+                }
+                
+                Section("Appearance") {
+                    NavigationLink("Theme") {
+                        ThemeSettingsView()
+                    }
+                }
+                
+                Section("Categories") {
+                    NavigationLink("Manage Categories") {
+                        CategoryManagementView()
+                    }
+                }
+                
+                Section("About") {
+                    HStack {
+                        Text("Version")
+                        Spacer()
+                        Text("1.0.0")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Settings")
+        }
+        .task {
+            await viewModel.loadModelStatus()
+            await statusViewModel.refreshAll()
+        }
+        .onChange(of: selectedModel) { _, _ in
+            Task {
+                await statusViewModel.refreshLLMStatus()
+            }
+        }
+        .refreshable {
+            await statusViewModel.refreshAll()
+            await viewModel.loadModelStatus()
+        }
+    }
+    
+    private var llmStatusDescription: String {
+        switch statusViewModel.llmStatus {
+        case .working:
+            return "Model loaded and ready for analysis"
+        case .partial:
+            return "Model downloaded but not loaded"
+        case .notConfigured:
+            return "No model downloaded. Download to enable AI analysis."
+        default:
+            return "Checking status..."
+        }
+    }
+    
+    private var githubAuthDescription: String {
+        switch statusViewModel.githubAuthStatus {
+        case .configured:
+            return "Authentication configured"
+        case .notConfigured:
+            return "Set up authentication to sync notes to GitHub"
+        default:
+            return "Checking status..."
+        }
+    }
+    
+    private var githubRepoDescription: String {
+        switch statusViewModel.githubRepoStatus {
+        case .configured:
+            return "Repository fully configured"
+        case .partial:
+            return "Repository set but authentication missing"
+        case .notConfigured:
+            return "Configure repository to enable GitHub sync"
+        default:
+            return "Checking status..."
+        }
+    }
+    
+    private var networkStatusDescription: String {
+        switch statusViewModel.networkStatus {
+        case .working:
+            return "Connected and ready to sync"
+        case .error:
+            return "No internet connection. Notes saved locally."
+        default:
+            return "Checking connection..."
+        }
+    }
+}
+
+@MainActor
+class SettingsViewModel: ObservableObject {
+    @Published var availableModels = ["LFM2-350M", "LFM2-700M", "LFM2-1.2B"]
+    @Published var modelStatus: String?
+    @Published var isDownloading = false
+    @Published var downloadProgress: Double = 0
+    @Published var needsDownload = false
+    @Published var errorMessage: String?
+    @Published var showError = false
+    
+    private let modelDownloader = ModelDownloader.shared
+    private let llmManager = LLMManager.shared
+    
+    func loadModelStatus() async {
+        let currentModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "LFM2-1.2B"
+        let isDownloaded = await modelDownloader.isModelDownloaded(currentModel)
+        
+        if isDownloaded {
+            if llmManager.isModelLoaded && llmManager.currentModel == currentModel {
+                modelStatus = "✓ Loaded and Ready"
+                needsDownload = false
+            } else {
+                modelStatus = "✓ Downloaded (Not Loaded)"
+                needsDownload = false
+            }
+        } else {
+            modelStatus = "✗ Not Downloaded"
+            needsDownload = true
+        }
+    }
+    
+    func selectModel(_ model: String) async {
+        errorMessage = nil
+        
+        // Check if model is downloaded
+        let isDownloaded = await modelDownloader.isModelDownloaded(model)
+        if !isDownloaded {
+            modelStatus = "✗ Not Downloaded - Please download first"
+            needsDownload = true
+            return
+        }
+        
+        await llmManager.loadModel(model)
+        await loadModelStatus()
+    }
+    
+    func downloadModel(_ model: String) async {
+        isDownloading = true
+        downloadProgress = 0.0
+        errorMessage = nil
+        showError = false
+        
+        defer { isDownloading = false }
+        
+        do {
+            try await modelDownloader.download(model: model) { progress in
+                Task { @MainActor in
+                    self.downloadProgress = progress
+                }
+            }
+            
+            await loadModelStatus()
+            
+            // Auto-load after successful download
+            let isDownloaded = await modelDownloader.isModelDownloaded(model)
+            if isDownloaded {
+                await llmManager.loadModel(model)
+                await loadModelStatus()
+                
+                // Show success feedback
+                #if os(iOS)
+                HapticFeedback.success()
+                #endif
+            }
+        } catch {
+            let errorDescription = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            errorMessage = "Download failed: \(errorDescription)"
+            showError = true
+            downloadProgress = 0.0
+            
+            #if os(iOS)
+            HapticFeedback.error()
+            #endif
+            
+            await loadModelStatus()
+        }
+    }
+}
+
+struct ThemeSettingsView: View {
+    @AppStorage("appearance") private var appearance = 0
+    @Environment(\.colorScheme) private var systemColorScheme
+    
+    var body: some View {
+        Form {
+            Picker("Appearance", selection: $appearance) {
+                Text("Light").tag(0)
+                Text("Dark").tag(1)
+                Text("System").tag(2)
+            }
+        }
+    }
+}
+
+struct GitHubAuthView: View {
+    private let authManager = GitHubAuth.shared
+    @State private var authMethod: AuthMethod = .pat
+    
+    var body: some View {
+        Form {
+            Picker("Authentication Method", selection: $authMethod) {
+                Text("Personal Access Token").tag(AuthMethod.pat)
+                Text("OAuth").tag(AuthMethod.oauth)
+                Text("SSH Key").tag(AuthMethod.ssh)
+            }
+            
+            switch authMethod {
+            case .pat:
+                PATAuthView()
+            case .oauth:
+                OAuthAuthView()
+            case .ssh:
+                SSHAuthView()
+            }
+        }
+        .navigationTitle("GitHub Authentication")
+    }
+}
+
+enum AuthMethod: String, CaseIterable {
+    case pat, oauth, ssh
+}
+
+struct PATAuthView: View {
+    @State private var token = ""
+    @State private var showSuccess = false
+    private let authManager = GitHubAuth.shared
+    
+    var body: some View {
+        Section("Personal Access Token") {
+            SecureField("Token", text: $token)
+            Button("Save") {
+                if authManager.savePAT(token) {
+                    showSuccess = true
+                    // Trigger sync when GitHub is configured
+                    Task {
+                        await RepositoryManager.shared.sync()
+                    }
+                }
+            }
+        }
+        .alert("GitHub configured", isPresented: $showSuccess) {
+            Button("OK") { }
+        } message: {
+            Text("Authentication saved. Pending notes will sync automatically.")
+        }
+    }
+}
+
+struct OAuthAuthView: View {
+    var body: some View {
+        Section("OAuth") {
+            Button("Authorize with GitHub") {
+                // OAuth flow
+            }
+        }
+    }
+}
+
+struct SSHAuthView: View {
+    var body: some View {
+        Section("SSH Key") {
+            Text("SSH key authentication coming soon")
+                .foregroundColor(.secondary)
+        }
+    }
+}
+
+struct GitHubRepositoryView: View {
+    @AppStorage("githubOwner") private var owner = ""
+    @AppStorage("githubRepo") private var repo = ""
+    @AppStorage("githubBranch") private var branch = "main"
+    @State private var showSuccess = false
+    
+    var body: some View {
+        Form {
+            TextField("Owner/Username", text: $owner)
+                .onChange(of: owner) { _, _ in
+                    triggerSyncIfConfigured()
+                }
+            TextField("Repository Name", text: $repo)
+                .onChange(of: repo) { _, _ in
+                    triggerSyncIfConfigured()
+                }
+            TextField("Branch", text: $branch)
+            
+            Button("Test Connection") {
+                triggerSyncIfConfigured()
+            }
+        }
+        .navigationTitle("Repository")
+        .alert("Repository configured", isPresented: $showSuccess) {
+            Button("OK") { }
+        } message: {
+            Text("Repository settings saved. Pending notes will sync automatically.")
+        }
+    }
+    
+    private func triggerSyncIfConfigured() {
+        guard !owner.isEmpty && !repo.isEmpty else { return }
+        
+        // Use Task with proper priority to avoid watchdog issues
+        Task(priority: .userInitiated) {
+            await RepositoryManager.shared.sync()
+            await MainActor.run {
+                showSuccess = true
+            }
+        }
+    }
+}
+

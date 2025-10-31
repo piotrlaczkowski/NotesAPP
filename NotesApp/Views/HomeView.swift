@@ -1,0 +1,650 @@
+import SwiftUI
+
+struct HomeView: View {
+    @StateObject private var viewModel = HomeViewModel()
+    @State private var searchText = ""
+    @State private var showReviewView = false
+    @State private var selectedNote: Note?
+    @AppStorage("notesLayoutStyle") private var layoutStyle: LayoutStyle = .grid
+    @State private var selectedCategory: String? = nil
+    @State private var selectedTags: Set<String> = []
+    @State private var showFilters = false
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                if viewModel.notes.isEmpty && !viewModel.isLoading {
+                    EmptyStateView()
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            // Filter sections
+                            if hasFilters {
+                                VStack(spacing: 12) {
+                                    // Category filter
+                                    if hasCategories {
+                                        categoryFilterSection
+                                            .padding(.horizontal)
+                                            .padding(.top, 8)
+                                            .transition(.move(edge: .top).combined(with: .opacity))
+                                    }
+                                    
+                                    // Tag filter
+                                    if hasTags {
+                                        tagFilterSection
+                                            .padding(.horizontal)
+                                            .padding(.bottom, 8)
+                                            .transition(.move(edge: .top).combined(with: .opacity))
+                                    }
+                                }
+                                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showFilters)
+                            }
+                            
+                            // Notes display
+                            if layoutStyle == .grid {
+                                notesGrid
+                            } else {
+                                notesCarousel
+                            }
+                        }
+                    }
+                    .refreshable {
+                        await viewModel.refresh()
+                    }
+                }
+                
+                if viewModel.isLoading || isSearching {
+                    ZStack {
+                        Color(.systemBackground)
+                            .opacity(0.8)
+                            .ignoresSafeArea()
+                        
+                        VStack(spacing: 16) {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                                .tint(.blue)
+                            
+                            if isSearching {
+                                Text("Searching...")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    }
+                    .animation(.easeInOut(duration: 0.2), value: viewModel.isLoading || isSearching)
+                }
+            }
+            .navigationTitle("Notes")
+            .searchable(text: $searchText, prompt: "Search notes...")
+            .toolbar {
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        #if os(iOS)
+                        HapticFeedback.selection()
+                        #endif
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            showFilters.toggle()
+                        }
+                    } label: {
+                        Image(systemName: showFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                            .font(.title3)
+                            .foregroundColor(hasActiveFilters ? .blue : .secondary)
+                            .symbolEffect(.bounce, value: showFilters)
+                    }
+                    .buttonStyle(.borderless)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    HStack(spacing: 12) {
+                        Button {
+                            #if os(iOS)
+                            HapticFeedback.selection()
+                            #endif
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                layoutStyle = layoutStyle == .grid ? .carousel : .grid
+                            }
+                        } label: {
+                            Image(systemName: layoutStyle == .grid ? "rectangle.grid.1x2" : "square.grid.2x2")
+                        }
+                        .buttonStyle(.borderless)
+                        
+                        Button {
+                            #if os(iOS)
+                            HapticFeedback.medium()
+                            #endif
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                viewModel.showAddURLSheet = true
+                            }
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title3)
+                        }
+                        .buttonStyle(.borderless)
+                        
+                        Button {
+                            #if os(iOS)
+                            HapticFeedback.selection()
+                            #endif
+                            Task {
+                                await viewModel.sync()
+                            }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.title3)
+                                .rotationEffect(.degrees(viewModel.isLoading ? 360 : 0))
+                                .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: viewModel.isLoading)
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(viewModel.isLoading)
+                    }
+                }
+            }
+            .sheet(isPresented: $viewModel.showAddURLSheet) {
+                AddURLView(viewModel: viewModel)
+            }
+            .sheet(item: $viewModel.pendingNoteToReview) { note in
+                NavigationStack {
+                    ReviewNoteView(note: note, analysis: NoteAnalysis(
+                        title: note.title,
+                        summary: note.summary,
+                        tags: note.tags,
+                        category: note.category,
+                        whatIsIt: nil,
+                        whyAdvantageous: nil
+                    ))
+                }
+            }
+            .sheet(item: $selectedNote) { note in
+                NoteDetailView(note: note)
+            }
+        }
+        .task {
+            await viewModel.loadNotes()
+            // Initialize with all notes
+            filteredNotesResult = viewModel.notes
+            updateFilteredNotes()
+        }
+        .onChange(of: searchText) { _, _ in
+            updateFilteredNotes()
+        }
+        .onChange(of: selectedCategory) { _, _ in
+            updateFilteredNotes()
+        }
+        .onChange(of: selectedTags) { _, _ in
+            updateFilteredNotes()
+        }
+        .onChange(of: viewModel.notes) { _, _ in
+            updateFilteredNotes()
+        }
+    }
+    
+    @State private var filteredNotesResult: [Note] = []
+    @State private var isSearching = false
+    
+    private var filteredNotes: [Note] {
+        // Return cached result if available, otherwise return all notes
+        return filteredNotesResult.isEmpty && !viewModel.notes.isEmpty ? viewModel.notes : filteredNotesResult
+    }
+    
+    private func updateFilteredNotes() {
+        Task {
+            await MainActor.run {
+                isSearching = true
+            }
+            
+            defer {
+                Task { @MainActor in
+                    isSearching = false
+                }
+            }
+            
+            var notes = viewModel.notes
+            let searchService = SearchService.shared
+            
+            // Apply category filter
+            if let selectedCategory = selectedCategory {
+                notes = await searchService.filterByCategory(notes, category: selectedCategory)
+            }
+            
+            // Apply tag filter
+            if !selectedTags.isEmpty {
+                notes = await searchService.filterByTags(notes, tags: selectedTags)
+            }
+            
+            // Apply enhanced search
+            if !searchText.isEmpty {
+                let searchResults = await searchService.search(notes: notes, query: searchText)
+                notes = searchResults.map { $0.note }
+            }
+            
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    filteredNotesResult = notes
+                }
+            }
+        }
+    }
+    
+    private var hasFilters: Bool {
+        showFilters && (hasCategories || hasTags)
+    }
+    
+    private var hasActiveFilters: Bool {
+        selectedCategory != nil || !selectedTags.isEmpty
+    }
+    
+    private var hasCategories: Bool {
+        !uniqueCategories.isEmpty
+    }
+    
+    private var uniqueCategories: [String] {
+        Array(Set(viewModel.notes.compactMap { $0.category })).sorted()
+    }
+    
+    private var hasTags: Bool {
+        !allTags.isEmpty
+    }
+    
+    private var allTags: [String] {
+        Array(Set(viewModel.notes.flatMap { $0.tags })).sorted()
+    }
+    
+    private var categoryFilterSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Category")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 4)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    CategoryFilterChip(
+                        title: "All",
+                        isSelected: selectedCategory == nil
+                    ) {
+                        withAnimation {
+                            selectedCategory = nil
+                        }
+                    }
+                    
+                    ForEach(uniqueCategories, id: \.self) { category in
+                        CategoryFilterChip(
+                            title: category,
+                            isSelected: selectedCategory == category
+                        ) {
+                            withAnimation {
+                                selectedCategory = selectedCategory == category ? nil : category
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+    
+    private var tagFilterSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Tags")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 4)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    if !selectedTags.isEmpty {
+                        Button {
+                            withAnimation {
+                                selectedTags.removeAll()
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "xmark.circle.fill")
+                                Text("Clear")
+                            }
+                            .font(.subheadline)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.red)
+                            .clipShape(Capsule())
+                        }
+                    }
+                    
+                    ForEach(allTags, id: \.self) { tag in
+                        TagFilterChip(
+                            tag: tag,
+                            isSelected: selectedTags.contains(tag)
+                        ) {
+                            withAnimation {
+                                if selectedTags.contains(tag) {
+                                    selectedTags.remove(tag)
+                                } else {
+                                    selectedTags.insert(tag)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+    
+    private var notesGrid: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.flexible(), spacing: 12),
+                GridItem(.flexible(), spacing: 12)
+            ],
+            spacing: 16
+        ) {
+            ForEach(Array(filteredNotes.enumerated()), id: \.element.id) { index, note in
+                NotesCardView(note: note) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        selectedNote = note
+                    }
+                    #if os(iOS)
+                    HapticFeedback.selection()
+                    #endif
+                }
+                .animatedCard(index: index)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical)
+    }
+    
+    private var notesCarousel: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 16) {
+                ForEach(Array(filteredNotes.enumerated()), id: \.element.id) { index, note in
+                    NotesCardView(note: note) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            selectedNote = note
+                        }
+                        #if os(iOS)
+                        HapticFeedback.selection()
+                        #endif
+                    }
+                    .frame(width: 320)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing).combined(with: .opacity),
+                        removal: .scale(scale: 0.9).combined(with: .opacity)
+                    ))
+                    .animation(.spring(response: 0.4, dampingFraction: 0.8).delay(Double(index) * 0.03), value: filteredNotes.count)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical)
+        }
+    }
+}
+
+enum LayoutStyle: String, Codable {
+    case grid
+    case carousel
+}
+
+struct CategoryFilterChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(isSelected ? .semibold : .regular)
+                .foregroundColor(isSelected ? .white : .primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color.blue : Color(.systemGray5))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+@MainActor
+class HomeViewModel: ObservableObject {
+    @Published var notes: [Note] = []
+    @Published var isLoading = false
+    @Published var showAddURLSheet = false
+    @Published var errorMessage: String?
+    
+    private let noteRepository = NoteRepository.shared
+    
+    func loadNotes() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        notes = await noteRepository.fetchAll()
+    }
+    
+    func refresh() async {
+        await loadNotes()
+        // Pull will check if GitHub is configured - no need to check here
+        // Use try? to silently handle errors (not configured is expected)
+        try? await RepositoryManager.shared.pull()
+        await loadNotes()
+    }
+    
+    func sync() async {
+        await RepositoryManager.shared.sync()
+        await loadNotes()
+    }
+    
+    func analyzeURL(_ urlString: String) async {
+        guard let url = URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            errorMessage = "Invalid URL. Please enter a valid URL."
+            return
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        
+        do {
+            let contentExtractor = URLContentExtractor.shared
+            // Use enhanced extraction with metadata
+            let result = try await contentExtractor.extractContentWithMetadata(from: url)
+            let content = result.content
+            let metadata = result.metadata
+            
+            // Try to analyze with LLM using metadata
+            let llmManager = LLMManager.shared
+            let analysis: NoteAnalysis
+            
+            if llmManager.isModelLoaded {
+                do {
+                    analysis = try await llmManager.analyzeContent(content, metadata: metadata)
+                } catch {
+                    // Fallback if LLM fails
+                    analysis = createFallbackAnalysis(from: content, url: url, metadata: metadata)
+                }
+            } else {
+                analysis = createFallbackAnalysis(from: content, url: url, metadata: metadata)
+            }
+            
+            // Create note
+            let note = Note(
+                title: analysis.title,
+                summary: analysis.summary,
+                content: content,
+                url: url,
+                tags: analysis.tags,
+                category: analysis.category,
+                syncStatus: .pending
+            )
+            
+            // Show review sheet
+            await MainActor.run {
+                self.pendingNoteToReview = note
+                self.showAddURLSheet = false
+            }
+        } catch {
+            errorMessage = "Failed to analyze URL: \(error.localizedDescription)"
+        }
+    }
+    
+    @Published var pendingNoteToReview: Note?
+    
+    private func createFallbackAnalysis(from content: String, url: URL, metadata: ContentMetadata?) -> NoteAnalysis {
+        // Use metadata if available for better fallback
+        let title: String
+        if let ogTitle = metadata?.openGraphTitle {
+            title = ogTitle
+        } else if let pageTitle = metadata?.pageTitle {
+            title = pageTitle
+        } else {
+            title = url.host ?? "Untitled"
+        }
+        
+        let summary: String
+        if let ogDesc = metadata?.openGraphDescription {
+            summary = ogDesc
+        } else if let metaDesc = metadata?.metaDescription {
+            summary = metaDesc
+        } else {
+            summary = String(content.prefix(200))
+        }
+        
+        var tags = metadata?.keywords ?? []
+        tags.append(contentsOf: extractBasicTags(from: content, url: url))
+
+        return NoteAnalysis(
+            title: title,
+            summary: summary,
+            tags: Array(Set(tags)).prefix(5).map { $0 },
+            category: extractBasicCategory(from: content, url: url, metadata: metadata),
+            whatIsIt: metadata?.openGraphDescription ?? metadata?.metaDescription ?? "Content extracted from \(url.host ?? "URL")",
+            whyAdvantageous: "Reference material for future use"
+        )
+    }
+    
+    private func extractBasicCategory(from content: String, url: URL, metadata: ContentMetadata?) -> String? {
+        // Use OpenGraph type if available
+        if let ogType = metadata?.openGraphType {
+            switch ogType.lowercased() {
+            case "article", "article:article":
+                return "Article"
+            default:
+                break
+            }
+        }
+        
+        // Fallback to domain/content-based detection
+        if let host = url.host {
+            if host.contains("arxiv") {
+                return "Research Paper"
+            } else if host.contains("github") {
+                return "Code Repository"
+            }
+        }
+        
+        let lowercased = content.lowercased()
+        if lowercased.contains("tutorial") || lowercased.contains("guide") {
+            return "Tutorial"
+        }
+        
+        return "General"
+    }
+    
+    private func extractBasicTags(from content: String, url: URL) -> [String] {
+        var tags: [String] = []
+        
+        if let host = url.host {
+            if host.contains("arxiv") {
+                tags.append("paper")
+                tags.append("research")
+            } else if host.contains("github") {
+                tags.append("github")
+                tags.append("code")
+            } else if host.contains("news") || host.contains("article") {
+                tags.append("news")
+            }
+        }
+        
+        return tags
+    }
+    
+    private func extractBasicCategory(from content: String, url: URL) -> String? {
+        let lowercased = content.lowercased()
+        if let host = url.host {
+            if host.contains("arxiv") {
+                return "Research Paper"
+            } else if host.contains("github") {
+                return "Code Repository"
+            }
+        }
+        if lowercased.contains("tutorial") || lowercased.contains("guide") {
+            return "Tutorial"
+        }
+        return "General"
+    }
+}
+
+struct EmptyStateView: View {
+    var body: some View {
+        VStack(spacing: 24) {
+            ZStack {
+                Circle()
+                    .fill(Color.blue.opacity(0.1))
+                    .frame(width: 120, height: 120)
+                
+                Image(systemName: "note.text.badge.plus")
+                    .font(.system(size: 50))
+                    .foregroundColor(.blue)
+            }
+            
+            VStack(spacing: 8) {
+                Text("No Notes Yet")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                
+                Text("Start collecting interesting content")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            
+            VStack(spacing: 12) {
+                HStack(spacing: 16) {
+                    FeatureIcon(icon: "safari", text: "Share from Safari")
+                    FeatureIcon(icon: "link", text: "Add URLs manually")
+                }
+                
+                HStack(spacing: 16) {
+                    FeatureIcon(icon: "sparkles", text: "AI analysis")
+                    FeatureIcon(icon: "arrow.triangle.2.circlepath", text: "Auto-sync to GitHub")
+                }
+            }
+            .padding(.top, 8)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct FeatureIcon: View {
+    let icon: String
+    let text: String
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundColor(.blue)
+                .frame(width: 44, height: 44)
+                .background(Color.blue.opacity(0.1))
+                .clipShape(Circle())
+            
+            Text(text)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(width: 100)
+    }
+}
+

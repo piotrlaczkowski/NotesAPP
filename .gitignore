@@ -1,0 +1,129 @@
+# Xcode
+#
+# Build generated
+build/
+DerivedData/
+
+# User-specific
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+
+# Xcode 8 and earlier
+*.xcscmblueprint
+*.xccheckout
+
+# Xcode 3 and earlier
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+
+# Xcode project files (entirely generated from project.yml - ignore it all)
+*.xcodeproj/
+*.xcworkspace/
+
+# Build artifacts
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.app
+*.framework
+*.xctest
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift Package Manager
+.build/
+.cache/
+.cargo/
+.swiftpm/
+Package.resolved
+Package.pins
+
+# CocoaPods
+Pods/
+*.xcworkspace
+
+# Carthage
+Carthage/Build/
+
+# Accio
+Dependencies/
+.accio/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Code Injection
+iOSInjectionProject/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Models & User Data (exclude large model files)
+Resources/Models/*.gguf
+Resources/Models/*.bin
+Resources/Models/*.ggml
+*.json
+!package.json
+!project.yml
+
+# Temporary files
+*.swp
+*.swo
+*~
+*.tmp
+
+# Temporary/status documentation files (not needed in repo)
+BUNDLE_ID_FIX.md
+COMPILATION_FIXES.md
+FINAL_FIXES.md
+PROJECT_GENERATED.md
+PROJECT_STATUS.md
+GIT_SETUP_COMPLETE.md
+CHECK_GIT_SETUP.sh
+.git/config.template
+
+# IDE
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Keep these (explicitly not ignored)
+!*.swift
+!*.yml
+!*.plist
+!*.entitlements
+!*.xcdatamodeld
+
+# Keep specific documentation files
+!README.md
+!README_SETUP.md
+!CONTRIBUTING.md
+!START_HERE.md
+!QUICK_START.md
+!SETUP_GUIDE.md
+!NEXT_STEPS.md
+!PARSING_COMPONENTS.md
+!GIT_COMMIT_GUIDE.md
+
+# Keep specific scripts
+!generate_project.sh
+!setup_xcode_project.sh
+!CLEAN_XCODE_CACHE.sh

@@ -1,0 +1,38 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Swift source files
+*.swift text eol=lf
+*.plist text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.sh text eol=lf
+
+# Project files
+*.pbxproj text eol=lf
+*.xcscheme text eol=lf
+*.xcworkspacedata text eol=lf
+
+# Documentation
+*.txt text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.ipa binary
+*.dSYM binary
+*.framework binary
+*.xcodeproj binary
+*.xcworkspace binary
+
+# Model files (should be ignored, but if accidentally tracked, mark as binary)
+*.gguf binary
+*.bin binary
+*.ggml binary
+
