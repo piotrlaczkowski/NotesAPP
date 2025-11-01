@@ -15,22 +15,29 @@ struct ReviewNoteView: View {
                 }
                 
                 Section("Category") {
-                    if let category = analysis.category {
-                        Picker("Category", selection: Binding(
-                            get: { note.category ?? category },
-                            set: { note.category = $0 }
-                        )) {
-                            ForEach(availableCategories, id: \.self) { cat in
-                                Text(cat).tag(cat as String?)
+                    Picker("Category", selection: Binding(
+                        get: { note.category ?? analysis.category },
+                        set: { 
+                            if $0?.isEmpty ?? true {
+                                note.category = nil
+                            } else {
+                                note.category = $0
                             }
-                            Text("None").tag(String?.none)
                         }
-                    } else {
-                        Picker("Category", selection: $note.category) {
+                    )) {
+                        Text("None").tag(String?.none)
+                        
+                        // Add a divider by creating two groups
+                        if let analysisCategory = analysis.category, !analysisCategory.isEmpty {
+                            Section("Suggested") {
+                                Text(analysisCategory).tag(analysisCategory as String?)
+                            }
+                        }
+                        
+                        Section("Categories") {
                             ForEach(availableCategories, id: \.self) { cat in
                                 Text(cat).tag(cat as String?)
                             }
-                            Text("None").tag(String?.none)
                         }
                     }
                 }

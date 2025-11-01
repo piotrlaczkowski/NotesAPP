@@ -4,6 +4,7 @@ struct NoteDetailView: View {
     @State var note: Note
     @Environment(\.dismiss) var dismiss
     @StateObject private var viewModel = NoteDetailViewModel()
+    @State private var showDeleteConfirmation = false
     
     var body: some View {
         NavigationStack {
@@ -79,8 +80,17 @@ struct NoteDetailView: View {
                         dismiss()
                     }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    // Delete button
+                    Button(role: .destructive) {
+                        showDeleteConfirmation = true
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    
+                    // Save button
+                    Button {
                         Task {
                             await viewModel.save(note: note)
                             if viewModel.errorMessage == nil {
@@ -90,9 +100,27 @@ struct NoteDetailView: View {
                                 dismiss()
                             }
                         }
+                    } label: {
+                        Image(systemName: "checkmark.circle.fill")
                     }
-                    .disabled(viewModel.isSaving)
+                    .disabled(viewModel.isSaving || viewModel.isDeleting)
                 }
+            }
+            .alert("Delete Note", isPresented: $showDeleteConfirmation) {
+                Button("Delete", role: .destructive) {
+                    Task {
+                        await viewModel.delete(note: note)
+                        if viewModel.errorMessage == nil {
+                            #if os(iOS)
+                            HapticFeedback.success()
+                            #endif
+                            dismiss()
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Are you sure you want to delete this note? This action cannot be undone.")
             }
             .alert("Error", isPresented: .constant(viewModel.errorMessage != nil)) {
                 Button("OK") {
@@ -111,6 +139,7 @@ struct NoteDetailView: View {
 class NoteDetailViewModel: ObservableObject {
     private let noteRepository = NoteRepository.shared
     @Published var isSaving = false
+    @Published var isDeleting = false
     @Published var errorMessage: String?
     
     func save(note: Note) async {
@@ -128,6 +157,22 @@ class NoteDetailViewModel: ObservableObject {
         }
         
         // Local save always succeeds - no error shown
+    }
+    
+    func delete(note: Note) async {
+        isDeleting = true
+        errorMessage = nil
+        defer { isDeleting = false }
+        
+        // Delete locally first
+        await noteRepository.delete(note)
+        
+        // Notify GitHub about deletion (attempt to mark as deleted or remove from sync)
+        // This is a background task - doesn't block the UI
+        Task(priority: .background) {
+            // GitHub deletion handling could be added here if needed
+            // For now, local deletion is sufficient
+        }
     }
 }
 

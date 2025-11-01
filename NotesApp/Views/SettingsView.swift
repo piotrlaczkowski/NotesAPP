@@ -12,165 +12,190 @@ struct SettingsView: View {
     
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Status Overview") {
-                    SettingsStatusIndicator(
-                        status: statusViewModel.llmStatus,
-                        title: "LLM Model",
-                        description: llmStatusDescription
-                    )
-                    
-                    SettingsStatusIndicator(
-                        status: statusViewModel.githubAuthStatus,
-                        title: "GitHub Authentication",
-                        description: githubAuthDescription
-                    )
-                    
-                    SettingsStatusIndicator(
-                        status: statusViewModel.githubRepoStatus,
-                        title: "GitHub Repository",
-                        description: githubRepoDescription
-                    )
-                    
-                    SettingsStatusIndicator(
-                        status: statusViewModel.networkStatus,
-                        title: "Network Connection",
-                        description: networkStatusDescription
-                    )
-                    
-                    if statusViewModel.pendingSyncCount > 0 {
-                        HStack {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .foregroundColor(.orange)
-                            Text("\(statusViewModel.pendingSyncCount) notes pending sync")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
+            ZStack {
+                // Background
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(.systemBackground),
+                        Color(.systemBackground).opacity(0.95)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
                 
-                Section("LLM Model") {
-                    Picker("Model", selection: $selectedModel) {
-                        ForEach(viewModel.availableModels, id: \.self) { model in
-                            Text(model).tag(model)
-                        }
-                    }
-                    .onChange(of: selectedModel) { _, newValue in
-                        Task {
-                            await viewModel.selectModel(newValue)
-                        }
-                    }
-                    
-                    if let status = viewModel.modelStatus {
-                        HStack {
-                            Text("Status:")
-                            Spacer()
-                            Text(status)
-                                .foregroundColor(status.contains("✓") ? .green : (status.contains("✗") ? .red : .secondary))
-                                .font(.subheadline)
-                        }
-                    }
-                    
-                    if viewModel.isDownloading {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ProgressView(value: viewModel.downloadProgress)
-                            Text("Downloading... \(Int(viewModel.downloadProgress * 100))%")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text("This may take several minutes depending on model size and connection speed.")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    } else if viewModel.needsDownload {
-                        Button {
-                            Task {
-                                await viewModel.downloadModel(selectedModel)
+                Form {
+                    Section {
+                        VStack(spacing: 12) {
+                            SettingsStatusIndicator(
+                                status: statusViewModel.llmStatus,
+                                title: "LLM Model",
+                                description: llmStatusDescription
+                            )
+                            
+                            SettingsStatusIndicator(
+                                status: statusViewModel.githubAuthStatus,
+                                title: "GitHub Authentication",
+                                description: githubAuthDescription
+                            )
+                            
+                            SettingsStatusIndicator(
+                                status: statusViewModel.githubRepoStatus,
+                                title: "GitHub Repository",
+                                description: githubRepoDescription
+                            )
+                            
+                            SettingsStatusIndicator(
+                                status: statusViewModel.networkStatus,
+                                title: "Network Connection",
+                                description: networkStatusDescription
+                            )
+                            
+                            if statusViewModel.pendingSyncCount > 0 {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "arrow.triangle.2.circlepath")
+                                        .foregroundColor(.orange)
+                                        .font(.system(size: 14, weight: .semibold))
+                                    
+                                    Text("\(statusViewModel.pendingSyncCount) notes pending sync")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                    
+                                    Spacer()
+                                }
+                                .padding(10)
+                                .background(Color.orange.opacity(0.1))
+                                .cornerRadius(8)
                             }
-                        } label: {
-                            HStack {
-                                Image(systemName: "arrow.down.circle.fill")
-                                Text("Download Model")
+                        }
+                    } header: {
+                        Text("Status Overview")
+                            .font(.headline)
+                    }
+                    
+                    Section("LLM Model") {
+                        Picker("Model", selection: $selectedModel) {
+                            ForEach(viewModel.availableModels, id: \.self) { model in
+                                Text(model).tag(model)
+                            }
+                        }
+                        .onChange(of: selectedModel) { _, newValue in
+                            Task {
+                                await viewModel.selectModel(newValue)
                             }
                         }
                         
-                        // Show model size info
-                        if let config = ModelConfig.config(for: selectedModel) {
-                            Text("Size: \(config.size)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                        if let status = viewModel.modelStatus {
+                            HStack {
+                                Text("Status:")
+                                Spacer()
+                                Text(status)
+                                    .foregroundColor(status.contains("✓") ? .green : (status.contains("✗") ? .red : .secondary))
+                                    .font(.subheadline)
+                            }
                         }
-                    } else {
-                        Button("Reload Model") {
-                            Task {
-                                await viewModel.selectModel(selectedModel)
+                        
+                        if viewModel.isDownloading {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ProgressView(value: viewModel.downloadProgress)
+                                Text("Downloading... \(Int(viewModel.downloadProgress * 100))%")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("This may take several minutes depending on model size and connection speed.")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        } else if viewModel.needsDownload {
+                            Button {
+                                Task {
+                                    await viewModel.downloadModel(selectedModel)
+                                }
+                            } label: {
+                                HStack {
+                                    Image(systemName: "arrow.down.circle.fill")
+                                    Text("Download Model")
+                                }
+                            }
+                            
+                            // Show model size info
+                            if let config = ModelConfig.config(for: selectedModel) {
+                                Text("Size: \(config.size)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } else {
+                            Button("Reload Model") {
+                                Task {
+                                    await viewModel.selectModel(selectedModel)
+                                }
                             }
                         }
                     }
-                }
-                .alert("Download Error", isPresented: $viewModel.showError) {
-                    Button("OK") {
-                        viewModel.showError = false
-                    }
-                    Button("Retry") {
-                        Task {
-                            await viewModel.downloadModel(selectedModel)
+                    .alert("Download Error", isPresented: $viewModel.showError) {
+                        Button("OK") {
+                            viewModel.showError = false
                         }
-                    }
-                } message: {
-                    if let error = viewModel.errorMessage {
-                        Text(error)
-                    }
-                }
-                
-                Section("GitHub Sync") {
-                    NavigationLink("Authentication") {
-                        GitHubAuthView()
-                    }
-                    
-                    NavigationLink("Repository") {
-                        GitHubRepositoryView()
-                    }
-                    
-                    Toggle("Auto Sync", isOn: $autoSyncEnabled)
-                    
-                    if autoSyncEnabled {
-                        Picker("Sync Interval (minutes)", selection: $syncInterval) {
-                            Text("5").tag(5)
-                            Text("15").tag(15)
-                            Text("30").tag(30)
-                            Text("60").tag(60)
+                        Button("Retry") {
+                            Task {
+                                await viewModel.downloadModel(selectedModel)
+                            }
+                        }
+                    } message: {
+                        if let error = viewModel.errorMessage {
+                            Text(error)
                         }
                     }
                     
-                    Divider()
-                        .padding(.vertical, 4)
+                    Section("GitHub Sync") {
+                        NavigationLink("Authentication") {
+                            GitHubAuthView()
+                        }
+                        
+                        NavigationLink("Repository") {
+                            GitHubRepositoryView()
+                        }
+                        
+                        Toggle("Auto Sync", isOn: $autoSyncEnabled)
+                        
+                        if autoSyncEnabled {
+                            Picker("Sync Interval (minutes)", selection: $syncInterval) {
+                                Text("5").tag(5)
+                                Text("15").tag(15)
+                                Text("30").tag(30)
+                                Text("60").tag(60)
+                            }
+                        }
+                        
+                        Divider()
+                            .padding(.vertical, 4)
+                        
+                        // Manual sync controls
+                        SyncControlsView()
+                    }
                     
-                    // Manual sync controls
-                    SyncControlsView()
-                }
-                
-                Section("Appearance") {
-                    NavigationLink("Theme") {
-                        ThemeSettingsView()
+                    Section("Appearance") {
+                        NavigationLink("Theme") {
+                            ThemeSettingsView()
+                        }
+                    }
+                    
+                    Section("Categories") {
+                        NavigationLink("Manage Categories") {
+                            CategoryManagementView()
+                        }
+                    }
+                    
+                    Section("About") {
+                        HStack {
+                            Text("Version")
+                            Spacer()
+                            Text("1.0.0")
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
-                
-                Section("Categories") {
-                    NavigationLink("Manage Categories") {
-                        CategoryManagementView()
-                    }
-                }
-                
-                Section("About") {
-                    HStack {
-                        Text("Version")
-                        Spacer()
-                        Text("1.0.0")
-                            .foregroundColor(.secondary)
-                    }
-                }
+                .navigationTitle("Settings")
             }
-            .navigationTitle("Settings")
         }
         .task {
             await viewModel.loadModelStatus()
@@ -326,16 +351,165 @@ class SettingsViewModel: ObservableObject {
 }
 
 struct ThemeSettingsView: View {
-    @AppStorage("appearance") private var appearance = 0
+    @AppStorage("appearance") private var appearance = 2
     @Environment(\.colorScheme) private var systemColorScheme
     
     var body: some View {
         Form {
-            Picker("Appearance", selection: $appearance) {
-                Text("Light").tag(0)
-                Text("Dark").tag(1)
-                Text("System").tag(2)
+            Section {
+                VStack(spacing: 16) {
+                    // Light Theme Option
+                    themeOption(
+                        icon: "sun.max.fill",
+                        title: "Light",
+                        subtitle: "Bright and clear",
+                        tag: 0,
+                        colors: [Color.white, Color(hex: "F5F5F7")]
+                    )
+                    
+                    // Dark Theme Option
+                    themeOption(
+                        icon: "moon.stars.fill",
+                        title: "Dark",
+                        subtitle: "Easy on the eyes",
+                        tag: 1,
+                        colors: [Color.black, Color(hex: "1C1C1E")]
+                    )
+                    
+                    // System Theme Option
+                    themeOption(
+                        icon: "gear",
+                        title: "System",
+                        subtitle: "Follow device settings",
+                        tag: 2,
+                        colors: [Color(hex: "E8E8EA"), Color(hex: "2A2A2A")]
+                    )
+                }
+                .padding(.vertical, 8)
+            } header: {
+                Text("Theme")
+            } footer: {
+                HStack {
+                    Image(systemName: "info.circle")
+                    Text("Changes apply immediately to the entire app")
+                        .font(.caption)
+                }
+                .foregroundColor(.secondary)
             }
+            
+            // Preview section
+            Section("Preview") {
+                previewCard()
+            }
+        }
+        .navigationTitle("Theme")
+    }
+    
+    private func themeOption(icon: String, title: String, subtitle: String, tag: Int, colors: [Color]) -> some View {
+        Button(action: {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                appearance = tag
+                #if os(iOS)
+                HapticFeedback.selection()
+                #endif
+            }
+        }) {
+            HStack(spacing: 12) {
+                // Icon with gradient background
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(
+                        LinearGradient(
+                            colors: [colors[0].opacity(0.7), colors[1].opacity(0.7)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .cornerRadius(10)
+                
+                // Title and subtitle
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                // Selection indicator
+                Image(systemName: appearance == tag ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20))
+                    .foregroundColor(appearance == tag ? .blue : .gray.opacity(0.3))
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.systemBackground))
+                    .stroke(
+                        appearance == tag ?
+                        LinearGradient(colors: [.blue, .blue.opacity(0.5)], startPoint: .topLeading, endPoint: .bottomTrailing) :
+                        LinearGradient(colors: [Color.gray.opacity(0.2), Color.gray.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        lineWidth: 2
+                    )
+            )
+        }
+    }
+    
+    private func previewCard() -> some View {
+        VStack(spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Sample Card")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    Text("This is how your notes will look")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "note.text")
+                    .font(.system(size: 20))
+                    .foregroundColor(.blue)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(.systemBackground))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+            )
+            
+            Text(getThemeDescription())
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .padding(.vertical, 8)
+    }
+    
+    private func getThemeDescription() -> String {
+        switch appearance {
+        case 0:
+            return "Light mode: Bright, clean interface ideal for daytime use"
+        case 1:
+            return "Dark mode: Comfortable for extended use, reduces eye strain"
+        case 2:
+            return "System mode: Automatically follows your device settings"
+        default:
+            return "Select a theme to get started"
         }
     }
 }
@@ -378,20 +552,34 @@ struct PATAuthView: View {
     
     var body: some View {
         Section {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Enter your GitHub Personal Access Token")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 16) {
+                // Header with icon
+                HStack(spacing: 8) {
+                    Image(systemName: "key.fill")
+                        .foregroundColor(.blue)
+                        .font(.system(size: 16))
+                    
+                    Text("Enter your GitHub Personal Access Token")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                }
                 
-                SecureField("ghp_xxxxxxxxxxxxxxxxxxxx", text: $token)
-                    .textContentType(.password)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Token")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    SecureField("ghp_xxxxxxxxxxxxxxxxxxxx", text: $token)
+                        .textContentType(.password)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .padding(10)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                }
                 
-                Text("Create a token at: github.com/settings/tokens")
-                    .font(.caption2)
-                    .foregroundColor(.blue)
-                    .onTapGesture {
+                VStack(alignment: .leading, spacing: 8) {
+                    Button(action: {
                         if let url = URL(string: "https://github.com/settings/tokens") {
                             #if os(iOS)
                             UIApplication.shared.open(url)
@@ -399,48 +587,87 @@ struct PATAuthView: View {
                             NSWorkspace.shared.open(url)
                             #endif
                         }
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "link")
+                            Text("Create token at GitHub settings")
+                        }
+                        .foregroundColor(.blue)
+                        .font(.caption)
                     }
-                
-                Text("Required scopes: repo (full control of private repositories)")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            
-            Button {
-                guard !token.isEmpty else {
-                    errorMessage = "Please enter a token"
-                    showError = true
-                    return
-                }
-                
-                if authManager.savePAT(token) {
-                    showSuccess = true
-                    token = "" // Clear the field after saving
-                    // Trigger sync when GitHub is configured
-                    Task {
-                        await RepositoryManager.shared.sync()
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                                .font(.system(size: 12))
+                            Text("repo")
+                                .font(.system(.caption, design: .monospaced))
+                                .fontWeight(.semibold)
+                            Text("(full control of private repositories)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
-                } else {
-                    errorMessage = "Failed to save token. Please try again."
-                    showError = true
+                    .padding(8)
+                    .background(Color.green.opacity(0.1))
+                    .cornerRadius(6)
                 }
-            } label: {
-                HStack {
-                    Spacer()
-                    Text("Save Token")
-                        .fontWeight(.semibold)
-                    Spacer()
+                
+                Button {
+                    guard !token.isEmpty else {
+                        errorMessage = "Please enter a token"
+                        showError = true
+                        return
+                    }
+                    
+                    if authManager.savePAT(token) {
+                        showSuccess = true
+                        token = ""
+                        Task {
+                            await RepositoryManager.shared.sync()
+                        }
+                    } else {
+                        errorMessage = "Failed to save token. Please try again."
+                        showError = true
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Spacer()
+                        Image(systemName: "lock.circle.fill")
+                        Text("Save Token Securely")
+                            .fontWeight(.semibold)
+                        Spacer()
+                    }
+                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.blue, Color.blue.opacity(0.8)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
                 }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.borderedProminent)
+            .padding(.vertical, 8)
         } header: {
             Text("Personal Access Token")
         } footer: {
             if authManager.hasAuthentication() {
-                HStack {
+                HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.green)
-                    Text("Token saved successfully")
+                    Text("Token saved successfully and stored securely in Keychain")
+                        .font(.caption)
+                }
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .foregroundColor(.blue)
+                    Text("Your token will be encrypted and stored securely on your device")
                         .font(.caption)
                 }
             }
@@ -456,9 +683,7 @@ struct PATAuthView: View {
             Text(errorMessage)
         }
         .onAppear {
-            // Check if token exists when view appears
             if authManager.hasAuthentication() {
-                // Token is saved, don't show it
                 token = ""
             }
         }
@@ -501,25 +726,14 @@ struct SyncControlsView: View {
                 #endif
                 isSyncing = true
                 Task {
-                    do {
-                        await RepositoryManager.shared.sync()
-                        await MainActor.run {
-                            isSyncing = false
-                            successMessage = "Sync completed successfully!"
-                            showSuccessAlert = true
-                            #if os(iOS)
-                            HapticFeedback.success()
-                            #endif
-                        }
-                    } catch {
-                        await MainActor.run {
-                            isSyncing = false
-                            errorMessage = "Sync failed: \(error.localizedDescription)"
-                            showErrorAlert = true
-                            #if os(iOS)
-                            HapticFeedback.error()
-                            #endif
-                        }
+                    await RepositoryManager.shared.sync()
+                    await MainActor.run {
+                        isSyncing = false
+                        successMessage = "Sync completed successfully!"
+                        showSuccessAlert = true
+                        #if os(iOS)
+                        HapticFeedback.success()
+                        #endif
                     }
                 }
             }) {
@@ -691,48 +905,61 @@ struct GitHubRepositoryView: View {
     var body: some View {
         Form {
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Your GitHub username or organization name")
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("GitHub username or organization name", systemImage: "person.crop.circle")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     
-                    TextField("username", text: $owner)
+                    TextField("piotrlaczkowski", text: $owner)
                         .textContentType(.username)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .onChange(of: owner) { _, newValue in
-                            // Auto-parse if full GitHub URL is pasted
                             parseGitHubURL(newValue)
                         }
+                        .padding(10)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
                 }
             } header: {
-                Text("Owner/Username")
+                Label("Owner/Username", systemImage: "person.fill")
+                    .font(.headline)
             }
             
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("The repository name (create it on GitHub if it doesn't exist)")
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Repository name (e.g., LibrarianAPP)", systemImage: "folder")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     
-                    TextField("my-notes-repo", text: $repo)
+                    TextField("LibrarianAPP", text: $repo)
                         .textContentType(.none)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .onChange(of: repo) { _, newValue in
-                            // Auto-parse if full GitHub URL is pasted in repo field
                             if newValue.contains("github.com") {
                                 parseGitHubURL(newValue)
                             }
                         }
+                        .padding(10)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
                 }
             } header: {
-                Text("Repository Name")
+                Label("Repository Name", systemImage: "folder.fill")
+                    .font(.headline)
+            } footer: {
+                HStack(spacing: 4) {
+                    Image(systemName: "lightbulb.fill")
+                        .foregroundColor(.yellow)
+                    Text("You can paste a full GitHub URL (e.g., https://github.com/user/repo) and it will auto-fill")
+                        .font(.caption)
+                }
             }
             
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Branch name (usually 'main' or 'master')")
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Branch name (usually 'main' or 'master')", systemImage: "git.branch")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     
@@ -740,13 +967,17 @@ struct GitHubRepositoryView: View {
                         .textContentType(.none)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .padding(10)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
                 }
             } header: {
-                Text("Branch")
+                Label("Branch", systemImage: "line.3.horizontal.decrease.circle")
+                    .font(.headline)
             }
             
             Section {
-                Button {
+                Button(action: {
                     guard !owner.isEmpty, !repo.isEmpty else {
                         errorMessage = "Please fill in both Owner and Repository name"
                         showError = true
@@ -759,7 +990,6 @@ struct GitHubRepositoryView: View {
                         return
                     }
                     
-                    // Check for malformed URLs in repo field
                     if repo.contains("github.com") || repo.contains("http") {
                         errorMessage = "Repository name contains a URL. Please enter just the repository name (e.g., 'LibrarianAPP')"
                         showError = true
@@ -770,30 +1000,85 @@ struct GitHubRepositoryView: View {
                     Task {
                         await testConnection()
                     }
-                } label: {
-                    HStack {
+                }) {
+                    HStack(spacing: 10) {
                         Spacer()
                         if isTesting {
                             ProgressView()
-                                .padding(.trailing, 8)
-                            Text("Testing...")
+                                .tint(.white)
+                                .padding(.trailing, 4)
+                            Text("Testing Connection...")
                         } else {
-                            Image(systemName: "checkmark.circle")
+                            Image(systemName: "checkmark.circle.fill")
                             Text("Test Connection")
                         }
                         Spacer()
                     }
+                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.blue, Color.blue.opacity(0.8)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.plain)
                 .disabled(isTesting || owner.isEmpty || repo.isEmpty)
-            } footer: {
-                if !owner.isEmpty && !repo.isEmpty {
-                    HStack {
-                        Image(systemName: "info.circle")
-                        Text("Notes will be saved to: \(owner)/\(repo)/notes/")
-                            .font(.caption)
+            }
+            
+            if !owner.isEmpty && !repo.isEmpty {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "info.circle.fill")
+                                .foregroundColor(.blue)
+                            Text("Configuration Preview")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                        }
+                        
+                        Divider()
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("Repository URL:")
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("github.com/\(owner)/\(repo)")
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundColor(.primary)
+                            }
+                            
+                            HStack {
+                                Text("Branch:")
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text(branch)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundColor(.primary)
+                            }
+                            
+                            HStack {
+                                Text("Storage Path:")
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(owner)/\(repo)/notes/")
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundColor(.primary)
+                            }
+                        }
+                        .padding(8)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(6)
                     }
-                    .foregroundColor(.secondary)
+                } header: {
+                    Label("Preview", systemImage: "eye")
+                        .font(.headline)
                 }
             }
         }
@@ -811,9 +1096,7 @@ struct GitHubRepositoryView: View {
     }
     
     private func parseGitHubURL(_ input: String) {
-        // Check if it's a full GitHub URL
         if input.contains("github.com") {
-            // Examples: https://github.com/piotrlaczkowski/LibrarianAPP or just github.com/piotrlaczkowski/LibrarianAPP
             let cleaned = input.replacingOccurrences(of: "https://", with: "")
                 .replacingOccurrences(of: "http://", with: "")
                 .replacingOccurrences(of: "git@github.com:", with: "")
@@ -822,13 +1105,10 @@ struct GitHubRepositoryView: View {
             let parts = cleaned.components(separatedBy: "/").filter { !$0.isEmpty }
             
             if parts.count >= 2 {
-                // Extract owner and repo from URL
                 let extractedOwner = parts[parts.count - 2]
                 let extractedRepo = parts[parts.count - 1]
                 
-                // Only update if we got valid values
                 if !extractedOwner.isEmpty && !extractedRepo.isEmpty {
-                    // Update owner and repo with parsed values
                     if owner != extractedOwner {
                         owner = extractedOwner
                     }

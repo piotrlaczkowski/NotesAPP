@@ -7,6 +7,9 @@ actor NoteRepository {
     private let fileManager = FileManager.default
     private let documentsURL: URL
     
+    // Notification name for when notes are updated
+    static let notesDidChangeNotification = NSNotification.Name("NotesDidChange")
+    
     private init() {
         let paths = fileManager.urls(for: .documentDirectory, in: .userDomainMask)
         documentsURL = paths[0].appendingPathComponent("Notes", isDirectory: true)
@@ -33,6 +36,11 @@ actor NoteRepository {
         let notesURL = documentsURL.appendingPathComponent("notes.json")
         guard let data = try? JSONEncoder().encode(notes) else { return }
         try? data.write(to: notesURL)
+        
+        // Post notification on main thread so UI can update
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: Self.notesDidChangeNotification, object: nil)
+        }
     }
     
     func fetchAll() -> [Note] {

@@ -17,11 +17,33 @@ actor URLContentExtractor {
             // Fall through to web content if PDF extraction fails
         }
         
-        // Handle different URL types
+        // Route to specialized extractors based on domain
         if url.host?.contains("arxiv.org") == true {
             return try await extractArXivContent(url: url)
         } else if url.host?.contains("github.com") == true {
             return try await extractGitHubContent(url: url)
+        } else if url.host?.contains("medium.com") == true {
+            return try await extractMediumContent(url: url)
+        } else if url.host?.contains("twitter.com") == true || url.host?.contains("x.com") == true {
+            return try await extractTwitterContent(url: url)
+        } else if url.host?.contains("youtube.com") == true || url.host?.contains("youtu.be") == true {
+            return try await extractYouTubeContent(url: url)
+        } else if url.host?.contains("linkedin.com") == true {
+            return try await extractLinkedInContent(url: url)
+        } else if url.host?.contains("stackoverflow.com") == true || url.host?.contains("stackexchange.com") == true {
+            return try await extractStackOverflowContent(url: url)
+        } else if url.host?.contains("producthunt.com") == true {
+            return try await extractProductHuntContent(url: url)
+        } else if url.host?.contains("reddit.com") == true {
+            return try await extractRedditContent(url: url)
+        } else if url.host?.contains("wikipedia.org") == true {
+            return try await extractWikipediaContent(url: url)
+        } else if url.host?.contains("substack.com") == true {
+            return try await extractSubstackContent(url: url)
+        } else if url.host?.contains("notion.so") == true {
+            return try await extractNotionContent(url: url)
+        } else if url.host?.contains("docs.google.com") == true {
+            return try await extractGoogleDocsContent(url: url)
         } else {
             return try await extractWebContent(url: url)
         }
@@ -266,32 +288,66 @@ actor URLContentExtractor {
         if pathComponents.count >= 3 {
             let owner = pathComponents[1]
             let repo = pathComponents[2]
-            let apiURL = URL(string: "https://api.github.com/repos/\(owner)/\(repo)/readme")!
             
-            // Try API first
+            // Try API first for comprehensive data
             do {
-                var request = URLRequest(url: apiURL)
+                // Fetch multiple API endpoints for comprehensive data
+                var repositoryInfo = ""
+                
+                // 1. Get repository metadata
+                let repoAPIURL = URL(string: "https://api.github.com/repos/\(owner)/\(repo)")!
+                var request = URLRequest(url: repoAPIURL)
                 request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
                 
-                let (data, response) = try await URLSession.shared.data(for: request)
-                
-                if let httpResponse = response as? HTTPURLResponse,
+                if let (data, response) = try? await URLSession.shared.data(for: request),
+                   let httpResponse = response as? HTTPURLResponse,
                    (200...299).contains(httpResponse.statusCode),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let base64Content = json["content"] as? String,
-                   let decoded = Data(base64Encoded: base64Content, options: .ignoreUnknownCharacters),
-                   let readme = String(data: decoded, encoding: .utf8) {
-                    content = "GitHub Repository: \(owner)/\(repo)\n\n"
-                    content += readme
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    
+                    // Extract repository information
+                    if let description = json["description"] as? String, !description.isEmpty {
+                        repositoryInfo += "Repository: \(owner)/\(repo)\n"
+                        repositoryInfo += "Description: \(description)\n\n"
+                    } else {
+                        repositoryInfo += "Repository: \(owner)/\(repo)\n\n"
+                    }
+                    
+                    // Add topics if available
+                    if let topics = json["topics"] as? [String], !topics.isEmpty {
+                        repositoryInfo += "Topics: \(topics.joined(separator: ", "))\n\n"
+                    }
+                    
+                    // Add stars and language info
+                    if let stars = json["stargazers_count"] as? Int {
+                        repositoryInfo += "⭐ Stars: \(stars)\n"
+                    }
+                    if let language = json["language"] as? String {
+                        repositoryInfo += "Language: \(language)\n"
+                    }
+                    repositoryInfo += "\n"
+                }
+                
+                // 2. Get README content
+                let readmeAPIURL = URL(string: "https://api.github.com/repos/\(owner)/\(repo)/readme")!
+                var readmeRequest = URLRequest(url: readmeAPIURL)
+                readmeRequest.setValue("application/vnd.github.v3.raw", forHTTPHeaderField: "Accept")
+                
+                if let (readmeData, readmeResponse) = try? await URLSession.shared.data(for: readmeRequest),
+                   let httpResponse = readmeResponse as? HTTPURLResponse,
+                   (200...299).contains(httpResponse.statusCode),
+                   let readme = String(data: readmeData, encoding: .utf8) {
+                    content = repositoryInfo + "README:\n\n" + readme
                     return content
                 }
-            } catch {
-                // Fall back to HTML parsing
             }
         }
         
-        // Fallback: Parse HTML for README
-        let (data, response) = try await URLSession.shared.data(from: url)
+        // Fallback: Parse HTML for README and description
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 30.0
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
@@ -302,19 +358,399 @@ actor URLContentExtractor {
             throw ContentExtractionError.invalidData
         }
         
-        // Extract README from HTML
-        if let readmeMatch = html.range(of: "<div[^>]*id=['\"]readme['\"][^>]*>(.*?)</div>", options: [String.CompareOptions.regularExpression, String.CompareOptions.caseInsensitive]) {
-            let readmeHTML = String(html[readmeMatch])
-            let readme = ContentParser.extractMainContent(from: readmeHTML)
-            if !readme.isEmpty {
-                content = "GitHub Repository README:\n\n\(readme)"
+        // Extract repository title and description from HTML
+        var htmlContent = "GitHub Repository\n\n"
+        
+        // Try to extract the repository description from meta tags
+        if let description = extractMetaTagContent(from: html, property: "og:description") {
+            htmlContent += "Description: \(description)\n\n"
+        }
+        
+        // Extract README content - look for common readme patterns
+        let readmePatterns = [
+            "<div[^>]*data-testid=['\"]readme['\"][^>]*>([\\s\\S]*?)</div>",
+            "<article[^>]*class=['\"]markdown-body['\"][^>]*>([\\s\\S]*?)</article>",
+            "<div[^>]*id=['\"]readme['\"][^>]*>([\\s\\S]*?)</div>",
+            "<section[^>]*class=['\"]Box-row['\"][^>]*>([\\s\\S]*?)</section>"
+        ]
+        
+        var readmeFound = false
+        for pattern in readmePatterns {
+            if let range = html.range(of: pattern, options: [String.CompareOptions.regularExpression, String.CompareOptions.caseInsensitive]) {
+                let readmeHTML = String(html[range])
+                let readme = ContentParser.extractMainContent(from: readmeHTML)
+                if !readme.isEmpty && readme.count > 100 {
+                    htmlContent += "README:\n\n" + readme
+                    readmeFound = true
+                    break
+                }
+            }
+        }
+        
+        // If no README found, try to extract main content
+        if !readmeFound {
+            let mainContent = ContentParser.extractMainContent(from: html)
+            if !mainContent.isEmpty {
+                htmlContent += "Content:\n\n" + mainContent
+            } else {
+                // Last resort: extract relevant sections from HTML
+                if let aboutMatch = html.range(of: "About", options: String.CompareOptions.caseInsensitive) {
+                    let startIndex = html.index(aboutMatch.lowerBound, offsetBy: -500, limitedBy: html.startIndex) ?? html.startIndex
+                    let endIndex = html.index(aboutMatch.upperBound, offsetBy: 2000, limitedBy: html.endIndex) ?? html.endIndex
+                    let section = String(html[startIndex..<endIndex])
+                    htmlContent += ContentParser.extractMainContent(from: section)
+                }
+            }
+        }
+        
+        return htmlContent.isEmpty ? html : htmlContent
+    }
+    
+    private func extractMediumContent(url: URL) async throws -> String {
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode),
+              let html = String(data: data, encoding: .utf8) else {
+            throw ContentExtractionError.httpError
+        }
+        
+        var content = "Medium Article\n\n"
+        
+        if let title = ContentParser.extractTitle(from: html) {
+            content += "Title: \(title)\n\n"
+        }
+        
+        if let author = ContentParser.extractAuthor(from: html) {
+            content += "Author: \(author)\n\n"
+        }
+        
+        if let date = ContentParser.extractPublishedDate(from: html) {
+            content += "Published: \(date)\n\n"
+        }
+        
+        // Extract article content
+        let articlePatterns = [
+            "<article[^>]*>(.*?)</article>",
+            "<div[^>]*class=['\"][^'\"]*article-content[^'\"]*['\"][^>]*>(.*?)</div>",
+            "<div[^>]*id=['\"]root['\"][^>]*>(.*?)</div>"
+        ]
+        
+        for pattern in articlePatterns {
+            if let range = html.range(of: pattern, options: [.regularExpression, .caseInsensitive]) {
+                let articleHTML = String(html[range])
+                let articleContent = ContentParser.extractMainContent(from: articleHTML)
+                if !articleContent.isEmpty && articleContent.count > 200 {
+                    content += articleContent
+                    return content
+                }
+            }
+        }
+        
+        return content + ContentParser.extractMainContent(from: html)
+    }
+    
+    private func extractTwitterContent(url: URL) async throws -> String {
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode),
+              let html = String(data: data, encoding: .utf8) else {
+            throw ContentExtractionError.httpError
+        }
+        
+        var content = "Tweet/Post\n\n"
+        
+        if let title = ContentParser.extractTitle(from: html) {
+            content += title + "\n\n"
+        }
+        
+        if let description = ContentParser.extractMetaDescription(from: html) {
+            content += description + "\n\n"
+        }
+        
+        // Extract tweet text from meta tags
+        if let ogDescription = ContentParser.extractOpenGraphTag(from: html, property: "og:description") {
+            content += ogDescription
+        } else {
+            content += ContentParser.extractMainContent(from: html)
+        }
+        
+        return content
+    }
+    
+    private func extractYouTubeContent(url: URL) async throws -> String {
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode),
+              let html = String(data: data, encoding: .utf8) else {
+            throw ContentExtractionError.httpError
+        }
+        
+        var content = "🎥 YouTube Video\n\n"
+        
+        if let title = ContentParser.extractTitle(from: html) {
+            content += "Title: \(title)\n\n"
+        }
+        
+        if let description = ContentParser.extractMetaDescription(from: html) {
+            content += "Description: \(description)\n\n"
+        }
+        
+        // Extract channel and duration from structured data
+        if let channelMatch = html.range(of: "\"author\":\\{\"name\":\"([^\"]+)\"", options: .regularExpression) {
+            let match = String(html[channelMatch])
+            if let nameRange = match.range(of: "\"name\":\"([^\"]+)\"", options: .regularExpression) {
+                let name = String(match[nameRange]).replacingOccurrences(of: "\"name\":\"", with: "").replacingOccurrences(of: "\"", with: "")
+                content += "Channel: \(name)\n\n"
+            }
+        }
+        
+        // Add full description
+        content += ContentParser.extractMainContent(from: html)
+        
+        return content
+    }
+    
+    private func extractLinkedInContent(url: URL) async throws -> String {
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode),
+              let html = String(data: data, encoding: .utf8) else {
+            throw ContentExtractionError.httpError
+        }
+        
+        var content = "💼 LinkedIn\n\n"
+        
+        if let title = ContentParser.extractTitle(from: html) {
+            content += title + "\n\n"
+        }
+        
+        if let description = ContentParser.extractMetaDescription(from: html) {
+            content += description + "\n\n"
+        }
+        
+        content += ContentParser.extractMainContent(from: html)
+        return content
+    }
+    
+    private func extractStackOverflowContent(url: URL) async throws -> String {
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode),
+              let html = String(data: data, encoding: .utf8) else {
+            throw ContentExtractionError.httpError
+        }
+        
+        var content = "❓ Stack Overflow\n\n"
+        
+        if let title = ContentParser.extractTitle(from: html) {
+            content += "Question: \(title)\n\n"
+        }
+        
+        // Extract question and top answers
+        let questionPatterns = [
+            "<div[^>]*class=['\"]s-prose[^'\"]*['\"][^>]*>(.*?)</div>",
+            "<div[^>]*id=['\"]question-header['\"][^>]*>(.*?)</div>"
+        ]
+        
+        for pattern in questionPatterns {
+            if let range = html.range(of: pattern, options: [.regularExpression, .caseInsensitive]) {
+                let questionHTML = String(html[range])
+                let questionContent = ContentParser.extractMainContent(from: questionHTML)
+                if !questionContent.isEmpty {
+                    content += "Q: \(questionContent)\n\n"
+                    break
+                }
+            }
+        }
+        
+        // Extract top answer
+        if let answerMatch = html.range(of: "<div[^>]*class=['\"]answer['\"][^>]*>(.*?)</div>", options: [.regularExpression, .caseInsensitive]) {
+            let answerHTML = String(html[answerMatch])
+            let answerContent = ContentParser.extractMainContent(from: answerHTML)
+            if !answerContent.isEmpty {
+                content += "A: \(answerContent)\n"
+            }
+        }
+        
+        return content
+    }
+    
+    private func extractProductHuntContent(url: URL) async throws -> String {
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode),
+              let html = String(data: data, encoding: .utf8) else {
+            throw ContentExtractionError.httpError
+        }
+        
+        var content = "🚀 Product Hunt\n\n"
+        
+        if let title = ContentParser.extractTitle(from: html) {
+            content += "Product: \(title)\n\n"
+        }
+        
+        if let description = ContentParser.extractMetaDescription(from: html) {
+            content += "Description: \(description)\n\n"
+        }
+        
+        content += ContentParser.extractMainContent(from: html)
+        return content
+    }
+    
+    private func extractRedditContent(url: URL) async throws -> String {
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode),
+              let html = String(data: data, encoding: .utf8) else {
+            throw ContentExtractionError.httpError
+        }
+        
+        var content = "🔗 Reddit Post\n\n"
+        
+        if let title = ContentParser.extractTitle(from: html) {
+            content += "Title: \(title)\n\n"
+        }
+        
+        if let description = ContentParser.extractMetaDescription(from: html) {
+            content += description + "\n\n"
+        }
+        
+        content += ContentParser.extractMainContent(from: html)
+        return content
+    }
+    
+    private func extractWikipediaContent(url: URL) async throws -> String {
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode),
+              let html = String(data: data, encoding: .utf8) else {
+            throw ContentExtractionError.httpError
+        }
+        
+        var content = "📚 Wikipedia\n\n"
+        
+        if let title = ContentParser.extractTitle(from: html) {
+            content += "Article: \(title)\n\n"
+        }
+        
+        // Extract main Wikipedia content
+        if let mainMatch = html.range(of: "<div[^>]*id=['\"]mw-content-text['\"][^>]*>(.*?)</div>", options: [.regularExpression, .caseInsensitive]) {
+            let mainHTML = String(html[mainMatch])
+            let mainContent = ContentParser.extractMainContent(from: mainHTML)
+            if !mainContent.isEmpty {
+                content += mainContent
                 return content
             }
         }
         
-        // Last resort: extract main content
-        content = ContentParser.extractMainContent(from: html)
-        return content.isEmpty ? html : content
+        content += ContentParser.extractMainContent(from: html)
+        return content
+    }
+    
+    private func extractSubstackContent(url: URL) async throws -> String {
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode),
+              let html = String(data: data, encoding: .utf8) else {
+            throw ContentExtractionError.httpError
+        }
+        
+        var content = "📰 Substack Article\n\n"
+        
+        if let title = ContentParser.extractTitle(from: html) {
+            content += "Title: \(title)\n\n"
+        }
+        
+        if let author = ContentParser.extractAuthor(from: html) {
+            content += "Author: \(author)\n\n"
+        }
+        
+        if let date = ContentParser.extractPublishedDate(from: html) {
+            content += "Published: \(date)\n\n"
+        }
+        
+        content += ContentParser.extractMainContent(from: html)
+        return content
+    }
+    
+    private func extractNotionContent(url: URL) async throws -> String {
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode),
+              let html = String(data: data, encoding: .utf8) else {
+            throw ContentExtractionError.httpError
+        }
+        
+        var content = "📝 Notion Page\n\n"
+        
+        if let title = ContentParser.extractTitle(from: html) {
+            content += title + "\n\n"
+        }
+        
+        content += ContentParser.extractMainContent(from: html)
+        return content
+    }
+    
+    private func extractGoogleDocsContent(url: URL) async throws -> String {
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode),
+              let html = String(data: data, encoding: .utf8) else {
+            throw ContentExtractionError.httpError
+        }
+        
+        var content = "📄 Google Docs\n\n"
+        
+        if let title = ContentParser.extractTitle(from: html) {
+            content += title + "\n\n"
+        }
+        
+        content += ContentParser.extractMainContent(from: html)
+        return content
     }
     
     private func extractWebContent(url: URL) async throws -> String {
@@ -376,6 +812,26 @@ actor URLContentExtractor {
             }
             throw ContentExtractionError.invalidData
         }
+    }
+    
+    private func extractMetaTagContent(from html: String, property: String) -> String? {
+        // Extract Open Graph or meta tag content
+        let patterns = [
+            "<meta[^>]*property=['\"]og:\(property)['\"][^>]*content=['\"]([^'\"]*)['\"]",
+            "<meta[^>]*content=['\"]([^'\"]*)['\"][^>]*property=['\"]og:\(property)['\"]"
+        ]
+        
+        for pattern in patterns {
+            if let range = html.range(of: pattern, options: String.CompareOptions.regularExpression) {
+                let match = String(html[range])
+                if let contentRange = match.range(of: "content=['\"]([^'\"]*)['\"]", options: String.CompareOptions.regularExpression) {
+                    let content = String(match[contentRange])
+                    let cleaned = content.replacingOccurrences(of: "content=['\"]", with: "").replacingOccurrences(of: "['\"]", with: "")
+                    return cleaned.isEmpty ? nil : cleaned
+                }
+            }
+        }
+        return nil
     }
 }
 

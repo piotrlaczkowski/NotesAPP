@@ -9,6 +9,8 @@ struct HomeView: View {
     @State private var selectedCategory: String? = nil
     @State private var selectedTags: Set<String> = []
     @State private var showFilters = false
+    @State private var noteToDelete: Note?
+    @State private var showDeleteConfirmation = false
     
     var body: some View {
         NavigationStack {
@@ -215,6 +217,18 @@ struct HomeView: View {
             .sheet(item: $selectedNote) { note in
                 NoteDetailView(note: note)
             }
+            .alert("Delete Note", isPresented: $showDeleteConfirmation) {
+                Button("Delete", role: .destructive) {
+                    if let note = noteToDelete {
+                        Task {
+                            await deleteNote(note)
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Are you sure you want to delete this note? This action cannot be undone.")
+            }
         }
         .task {
             await viewModel.loadNotes()
@@ -281,6 +295,14 @@ struct HomeView: View {
                 }
             }
         }
+    }
+    
+    private func deleteNote(_ note: Note) async {
+        await viewModel.deleteNote(note)
+        noteToDelete = nil
+        #if os(iOS)
+        HapticFeedback.success()
+        #endif
     }
     
     private var hasFilters: Bool {
@@ -476,6 +498,14 @@ struct HomeView: View {
                     insertion: .scale(scale: 0.9).combined(with: .opacity),
                     removal: .scale(scale: 0.8).combined(with: .opacity)
                 ))
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        noteToDelete = note
+                        showDeleteConfirmation = true
+                    } label: {
+                        Label("Delete", systemImage: "trash.fill")
+                    }
+                }
             }
         }
         .padding(.horizontal, 20)
@@ -500,7 +530,14 @@ struct HomeView: View {
                         insertion: .move(edge: .trailing).combined(with: .opacity),
                         removal: .scale(scale: 0.9).combined(with: .opacity)
                     ))
-                    .animation(.spring(response: 0.4, dampingFraction: 0.8).delay(Double(index) * 0.03), value: filteredNotes.count)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            noteToDelete = note
+                            showDeleteConfirmation = true
+                        } label: {
+                            Label("Delete", systemImage: "trash.fill")
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -566,6 +603,32 @@ class HomeViewModel: ObservableObject {
     @Published var errorMessage: String?
     
     private let noteRepository = NoteRepository.shared
+    private var notificationObserver: NSObjectProtocol?
+    
+    init() {
+        // Subscribe to notes change notifications
+        setupNotificationObserver()
+    }
+    
+    deinit {
+        // Clean up notification observer
+        if let observer = notificationObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+    
+    private func setupNotificationObserver() {
+        notificationObserver = NotificationCenter.default.addObserver(
+            forName: NoteRepository.notesDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            // Automatically reload notes when they change
+            Task {
+                await self?.loadNotes()
+            }
+        }
+    }
     
     func loadNotes() async {
         isLoading = true
@@ -619,6 +682,11 @@ class HomeViewModel: ObservableObject {
             HapticFeedback.error()
             #endif
         }
+    }
+    
+    func deleteNote(_ note: Note) async {
+        // Delete from repository (triggers notification which updates UI)
+        await noteRepository.delete(note)
     }
     
     func analyzeURL(_ urlString: String) async {
