@@ -99,19 +99,24 @@ class ShareViewController: UIViewController {
     }
     
     private func presentShareNoteView(url: URL?) {
-        let shareView = ShareNoteView(url: url) { note in
-            // Save note and dismiss
+        // Simplified: Just extract URL and open main app
+        // The main app will handle all LLM analysis with full intelligence
+        guard let url = url else {
+            extensionContext?.completeRequest(returningItems: nil)
+            return
+        }
+        
+        // Show a quick confirmation view
+        let quickView = QuickShareView(url: url) {
+            // User confirmed - save URL and open app
             Task {
-                await self.saveNote(note)
-                DispatchQueue.main.async {
-                    self.extensionContext?.completeRequest(returningItems: nil)
-                }
+                await self.saveURLToProcess(url: url)
             }
         } onCancel: {
             self.extensionContext?.completeRequest(returningItems: nil)
         }
         
-        let hostingController = UIHostingController(rootView: shareView)
+        let hostingController = UIHostingController(rootView: quickView)
         addChild(hostingController)
         view.addSubview(hostingController.view)
         hostingController.view.frame = view.bounds
@@ -119,198 +124,155 @@ class ShareViewController: UIViewController {
     }
     
     private func saveNote(_ note: Note) async {
-        // Save to shared UserDefaults - this will be processed by the main app
-        guard let sharedDefaults = UserDefaults(suiteName: "group.com.piotrlaczkowski.NotesApp") else {
-            // App Group not configured - log and continue
-            print("Warning: App Group UserDefaults not available")
+        // Instead of saving a full note, we'll just save the URL
+        // The main app will handle full LLM analysis using its robust system
+        guard let url = note.url else {
+            extensionContext?.completeRequest(returningItems: nil)
             return
         }
         
-        // Access UserDefaults on main thread for thread safety
+        await saveURLToProcess(url: url)
+    }
+    
+    private func saveURLToProcess(url: URL) async {
+        // Save URL to shared UserDefaults - main app will process it
+        guard let sharedDefaults = UserDefaults(suiteName: "group.com.piotrlaczkowski.NotesApp") else {
+            print("Warning: App Group UserDefaults not available")
+            extensionContext?.completeRequest(returningItems: nil)
+            return
+        }
+        
+        // Save the URL string for the main app to process
         await MainActor.run {
-            if let noteData = try? JSONEncoder().encode(note) {
-                sharedDefaults.set(noteData, forKey: "pendingNote")
-                // synchronize() is deprecated and not needed on modern iOS/macOS
-                // The system automatically syncs when needed
-            }
+            sharedDefaults.set(url.absoluteString, forKey: "pendingURLToAnalyze")
+            sharedDefaults.synchronize()
             
-            NotificationCenter.default.post(name: NSNotification.Name("NewNoteShared"), object: nil)
+            // Post notification to wake up the main app
+            NotificationCenter.default.post(name: NSNotification.Name("NewURLShared"), object: nil)
+            
+            // Try to open the main app using URL scheme
+            // In extensions, we use open(_:completionHandler:) on extensionContext
+            if let appURL = URL(string: "notesapp://process?url=\(url.absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
+                // Use extensionContext to open URL (supported in Share Extensions)
+                if let context = self.extensionContext {
+                    context.open(appURL) { success in
+                        // Complete the extension request after opening app
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            self.extensionContext?.completeRequest(returningItems: nil)
+                        }
+                    }
+                } else {
+                    // Fallback if extensionContext is nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        self.extensionContext?.completeRequest(returningItems: nil)
+                    }
+                }
+            } else {
+                // Fallback: just complete and let notification handle it
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self.extensionContext?.completeRequest(returningItems: nil)
+                }
+            }
         }
     }
 }
 
-struct ShareNoteView: View {
-    let url: URL?
-    let onSave: (Note) -> Void
+// Simplified view that just confirms and opens main app
+struct QuickShareView: View {
+    let url: URL
+    let onConfirm: () -> Void
     let onCancel: () -> Void
-    
-    @StateObject private var viewModel = ShareNoteViewModel()
-    @State private var selectedTags: [String] = []
     
     var body: some View {
         NavigationStack {
-            ZStack {
-                if viewModel.isAnalyzing {
-                    VStack {
-                        ProgressView()
-                            .scaleEffect(1.5)
-                        Text("Analyzing content...")
-                            .padding()
-                    }
-                } else if let analysis = viewModel.analysis {
-                    Form {
-                        Section("Analysis Results") {
-                            TextField("Title", text: Binding(
-                                get: { viewModel.note?.title ?? "" },
-                                set: { viewModel.note?.title = $0 }
-                            ))
-                            
-                            TextEditor(text: Binding(
-                                get: { viewModel.note?.summary ?? "" },
-                                set: { viewModel.note?.summary = $0 }
-                            ))
-                            .frame(height: 80)
-                            
-                            TagEditorView(tags: $selectedTags)
+            VStack(spacing: 24) {
+                Spacer()
+                
+                // Icon
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 60))
+                    .foregroundColor(.blue)
+                    .padding(.bottom, 8)
+                
+                // Title
+                Text("Share to Notes")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                // URL Preview
+                VStack(spacing: 12) {
+                    Text("URL")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+                    
+                    VStack(spacing: 8) {
+                        if let host = url.host {
+                            Text(host)
+                                .font(.headline)
+                                .foregroundColor(.primary)
                         }
-                        
-                        Button("Save to Notes") {
-                            if var note = viewModel.note {
-                                note.tags = selectedTags
-                                onSave(note)
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
+                        Text(url.absoluteString)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
                     }
-                } else {
-                    Text("Loading...")
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .cornerRadius(12)
                 }
+                .padding(.horizontal, 32)
+                
+                // Description
+                VStack(spacing: 8) {
+                    Text("This will open NotesApp")
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                    Text("to analyze the content with AI")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                // Action Button
+                Button {
+                    #if os(iOS)
+                    HapticFeedback.success()
+                    #endif
+                    onConfirm()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.title3)
+                        Text("Continue in NotesApp")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+                }
+                .padding(.horizontal, 32)
+                .padding(.bottom, 32)
             }
             .navigationTitle("Share to Notes")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", action: onCancel)
-                }
-            }
-        }
-        .task {
-            if let url = url {
-                await viewModel.analyze(url: url)
-                if let analysis = viewModel.analysis {
-                    selectedTags = analysis.tags
+                    Button("Cancel") {
+                        #if os(iOS)
+                        HapticFeedback.selection()
+                        #endif
+                        onCancel()
+                    }
                 }
             }
         }
     }
 }
 
-@MainActor
-class ShareNoteViewModel: ObservableObject {
-    @Published var isAnalyzing = false
-    @Published var analysis: NoteAnalysis?
-    @Published var note: Note?
-    @Published var errorMessage: String?
-    
-    private let contentExtractor = URLContentExtractor.shared
-    
-    func analyze(url: URL) async {
-        isAnalyzing = true
-        errorMessage = nil
-        defer { isAnalyzing = false }
-        
-        do {
-            // Extract content
-            let content = try await contentExtractor.extractContent(from: url)
-            
-            // Get LLM service (if available)
-            // In extension, we might need to use a shared service or direct service
-            let llmService = MLCLLMService()
-            
-            // Check if model is loaded
-            if !llmService.isModelLoaded {
-                // For extension, use fallback analysis
-                let fallbackAnalysis = createFallbackAnalysis(from: content, url: url)
-                self.analysis = fallbackAnalysis
-                self.note = Note(
-                    title: fallbackAnalysis.title,
-                    summary: fallbackAnalysis.summary,
-                    content: content,
-                    url: url,
-                    tags: fallbackAnalysis.tags,
-                    category: fallbackAnalysis.category,
-                    syncStatus: .pending
-                )
-            } else {
-                // Analyze with LLM
-                let analysis = try await llmService.analyzeContent(content: content)
-                self.analysis = analysis
-                
-                // Create note
-                self.note = Note(
-                    title: analysis.title,
-                    summary: analysis.summary,
-                    content: content,
-                    url: url,
-                    tags: analysis.tags,
-                    category: analysis.category,
-                    syncStatus: .pending
-                )
-            }
-        } catch {
-            errorMessage = "Failed to analyze content: \(error.localizedDescription)"
-            // Create note with fallback
-            let fallbackNote = createFallbackNote(url: url)
-            self.note = fallbackNote
-            self.analysis = NoteAnalysis(
-                title: fallbackNote.title,
-                summary: fallbackNote.summary,
-                tags: fallbackNote.tags,
-                category: fallbackNote.category,
-                whatIsIt: "Content from \(url.host ?? "URL")",
-                whyAdvantageous: "Reference material"
-            )
-        }
-    }
-    
-    private func createFallbackAnalysis(from content: String, url: URL) -> NoteAnalysis {
-        let title = ContentParser.extractTitle(from: content) ?? url.host ?? "Untitled"
-        let summary = String(content.prefix(200))
-        let tags = extractKeywords(from: content)
-        let category: String?
-        if url.host?.contains("arxiv") == true {
-            category = "Research Paper"
-        } else if url.host?.contains("github") == true {
-            category = "Code Repository"
-        } else {
-            category = "General"
-        }
-        
-        return NoteAnalysis(
-            title: title,
-            summary: summary,
-            tags: tags,
-            category: category,
-            whatIsIt: "Content extracted from \(url.host ?? "URL")",
-            whyAdvantageous: "Reference material for future use"
-        )
-    }
-    
-    private func createFallbackNote(url: URL) -> Note {
-        Note(
-            title: url.host ?? "Untitled",
-            summary: "Content from \(url.absoluteString)",
-            content: "",
-            url: url,
-            tags: [],
-            syncStatus: .pending
-        )
-    }
-    
-    private func extractKeywords(from content: String) -> [String] {
-        // Simple keyword extraction
-        let keywords = ["AI", "Research", "Technology", "Science", "Programming"]
-        return Array(keywords.prefix(3))
-    }
-}
 

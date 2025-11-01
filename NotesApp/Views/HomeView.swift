@@ -204,14 +204,21 @@ struct HomeView: View {
             }
             .sheet(item: $viewModel.pendingNoteToReview) { note in
                 NavigationStack {
-                    ReviewNoteView(note: note, analysis: NoteAnalysis(
-                        title: note.title,
-                        summary: note.summary,
-                        tags: note.tags,
-                        category: note.category,
-                        whatIsIt: nil,
-                        whyAdvantageous: nil
-                    ))
+                    ReviewNoteView(
+                        note: note,
+                        analysis: viewModel.pendingNoteAnalysis ?? NoteAnalysis(
+                            title: note.title,
+                            summary: note.summary,
+                            tags: note.tags,
+                            category: note.category,
+                            whatIsIt: nil,
+                            whyAdvantageous: nil
+                        )
+                    )
+                }
+                .onDisappear {
+                    // Clear analysis when sheet dismisses
+                    viewModel.pendingNoteAnalysis = nil
                 }
             }
             .sheet(item: $selectedNote) { note in
@@ -732,9 +739,10 @@ class HomeViewModel: ObservableObject {
                 syncStatus: .pending
             )
             
-            // Show review sheet
+            // Store analysis for ReviewNoteView
             await MainActor.run {
                 self.pendingNoteToReview = note
+                self.pendingNoteAnalysis = analysis
                 self.showAddURLSheet = false
             }
         } catch {
@@ -743,6 +751,7 @@ class HomeViewModel: ObservableObject {
     }
     
     @Published var pendingNoteToReview: Note?
+    @Published var pendingNoteAnalysis: NoteAnalysis?
     
     private func createFallbackAnalysis(from content: String, url: URL, metadata: ContentMetadata?) -> NoteAnalysis {
         // Use metadata if available for better fallback

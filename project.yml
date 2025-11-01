@@ -30,6 +30,10 @@ targets:
         CFBundleDisplayName: NotesApp
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - notesapp
+            CFBundleURLName: com.piotrlaczkowski.NotesApp
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
@@ -70,6 +74,9 @@ targets:
       - path: NotesApp/Models
       - path: NotesApp/Services/ContentExtractor
       - path: NotesApp/Services/LLMEngine
+      - path: NotesApp/Services/StorageService
+        excludes:
+          - "**/NotesDataModel.xcdatamodeld"
       - path: NotesApp/Utilities
       - path: NotesApp/Views/Components
     info:
@@ -106,5 +113,16 @@ targets:
         com.apple.security.network.client: true
         keychain-access-groups:
           - $(AppIdentifierPrefix)com.piotrlaczkowski.NotesApp.ShareExtension
+
+schemes:
+  NotesApp:
+    build:
+      targets:
+        ShareExtension: []
+        NotesApp: [ShareExtension]
+    run:
+      config: Debug
+    archive:
+      config: Release
 
 

@@ -15,6 +15,34 @@ struct NotesApp: App {
             ContentView()
                 .environmentObject(appState)
                 .preferredColorScheme(appState.colorScheme)
+                .onOpenURL { url in
+                    // Handle URL scheme from Share Extension
+                    if url.scheme == "notesapp" {
+                        Task { @MainActor in
+                            await handleURLScheme(url: url)
+                        }
+                    }
+                }
+        }
+    }
+    
+    @MainActor
+    private func handleURLScheme(url: URL) async {
+        // Parse URL: notesapp://process?url=...
+        if url.host == "process" {
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            if let urlQuery = components?.queryItems?.first(where: { $0.name == "url" }),
+               let urlString = urlQuery.value,
+               let targetURL = URL(string: urlString) {
+                // Process the URL using AppState
+                await appState.processURLFromShareExtension(url: targetURL)
+            } else {
+                // Fallback: check App Group for pending URL
+                await appState.processPendingNote()
+            }
+        } else {
+            // Fallback: check App Group for pending URL
+            await appState.processPendingNote()
         }
     }
 }
