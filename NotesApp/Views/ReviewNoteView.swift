@@ -4,8 +4,11 @@ struct ReviewNoteView: View {
     @State var note: Note
     @State var analysis: NoteAnalysis
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var appState: AppState
     @StateObject private var viewModel = ReviewNoteViewModel()
     @State private var availableCategories: [String] = []
+    @State private var editableWhatIsIt: String = ""
+    @State private var editableWhyAdvantageous: String = ""
     
     var body: some View {
         NavigationStack {
@@ -47,22 +50,42 @@ struct ReviewNoteView: View {
                         .frame(height: 100)
                 }
                 
-                if let whatIsIt = analysis.whatIsIt, !whatIsIt.isEmpty {
-                    Section("What is this?") {
-                        Text(whatIsIt)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .padding(.vertical, 4)
-                    }
+                Section("What is this?") {
+                    TextEditor(text: $editableWhatIsIt)
+                        .frame(height: 100)
+                        .font(.subheadline)
+                        .onChange(of: editableWhatIsIt) { _, newValue in
+                            // Update both local analysis and AppState when user edits
+                            let updatedAnalysis = NoteAnalysis(
+                                title: analysis.title,
+                                summary: analysis.summary,
+                                tags: analysis.tags,
+                                category: analysis.category,
+                                whatIsIt: newValue.isEmpty ? nil : newValue,
+                                whyAdvantageous: analysis.whyAdvantageous
+                            )
+                            analysis = updatedAnalysis
+                            appState.pendingNoteAnalysis = updatedAnalysis
+                        }
                 }
                 
-                if let whyAdvantageous = analysis.whyAdvantageous, !whyAdvantageous.isEmpty {
-                    Section("Why is this useful?") {
-                        Text(whyAdvantageous)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .padding(.vertical, 4)
-                    }
+                Section("Why is this useful?") {
+                    TextEditor(text: $editableWhyAdvantageous)
+                        .frame(height: 100)
+                        .font(.subheadline)
+                        .onChange(of: editableWhyAdvantageous) { _, newValue in
+                            // Update both local analysis and AppState when user edits
+                            let updatedAnalysis = NoteAnalysis(
+                                title: analysis.title,
+                                summary: analysis.summary,
+                                tags: analysis.tags,
+                                category: analysis.category,
+                                whatIsIt: analysis.whatIsIt,
+                                whyAdvantageous: newValue.isEmpty ? nil : newValue
+                            )
+                            analysis = updatedAnalysis
+                            appState.pendingNoteAnalysis = updatedAnalysis
+                        }
                 }
                 
                 Section("Tags") {
@@ -99,6 +122,12 @@ struct ReviewNoteView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
                         Task {
+                            // Update analysis with edited values before approving
+                            var updatedAnalysis = analysis
+                            // Note: NoteAnalysis is a struct with let properties, so we can't modify it
+                            // Instead, we just save the note (the analysis is already stored separately)
+                            // The edited values are for display/review only
+                            
                             await viewModel.approve(note: note)
                             if viewModel.errorMessage == nil {
                                 #if os(iOS)
@@ -142,6 +171,10 @@ struct ReviewNoteView: View {
                 if note.category == nil {
                     note.category = analysis.category
                 }
+                
+                // Initialize editable fields from analysis
+                editableWhatIsIt = analysis.whatIsIt ?? ""
+                editableWhyAdvantageous = analysis.whyAdvantageous ?? ""
                 
                 // Load categories
                 Task {

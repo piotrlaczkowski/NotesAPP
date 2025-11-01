@@ -99,16 +99,16 @@ class ShareViewController: UIViewController {
     }
     
     private func presentShareNoteView(url: URL?) {
-        // Simplified: Just extract URL and open main app
+        // Simplified: Just extract URL and open main app immediately
         // The main app will handle all LLM analysis with full intelligence
         guard let url = url else {
             extensionContext?.completeRequest(returningItems: nil)
             return
         }
         
-        // Show a quick confirmation view
-        let quickView = QuickShareView(url: url) {
-            // User confirmed - save URL and open app
+        // Show a brief loading view while the app opens
+        let quickView = QuickShareView(url: url, autoConfirm: true) {
+            // Save URL and open app immediately
             Task {
                 await self.saveURLToProcess(url: url)
             }
@@ -138,7 +138,9 @@ class ShareViewController: UIViewController {
         // Save URL to shared UserDefaults - main app will process it
         guard let sharedDefaults = UserDefaults(suiteName: "group.com.piotrlaczkowski.NotesApp") else {
             print("Warning: App Group UserDefaults not available")
-            extensionContext?.completeRequest(returningItems: nil)
+            await MainActor.run {
+                extensionContext?.completeRequest(returningItems: nil)
+            }
             return
         }
         
@@ -150,26 +152,48 @@ class ShareViewController: UIViewController {
             // Post notification to wake up the main app
             NotificationCenter.default.post(name: NSNotification.Name("NewURLShared"), object: nil)
             
-            // Try to open the main app using URL scheme
-            // In extensions, we use open(_:completionHandler:) on extensionContext
-            if let appURL = URL(string: "notesapp://process?url=\(url.absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
-                // Use extensionContext to open URL (supported in Share Extensions)
-                if let context = self.extensionContext {
-                    context.open(appURL) { success in
-                        // Complete the extension request after opening app
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            self.extensionContext?.completeRequest(returningItems: nil)
+            // Open the main app using URL scheme - this must happen on main thread
+            // Use a simpler URL scheme format that's more reliable
+            // First, try opening with the full URL
+            let encodedURL = url.absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            var appURL: URL?
+            
+            // Try simple format first (more reliable)
+            if let simpleURL = URL(string: "notesapp://open?url=\(encodedURL)") {
+                appURL = simpleURL
+            } else if let processURL = URL(string: "notesapp://process?url=\(encodedURL)") {
+                appURL = processURL
+            }
+            
+            if let appURL = appURL, let context = self.extensionContext {
+                // Use extensionContext to open URL - this should switch to the main app
+                print("Extension: Opening app with URL: \(appURL.absoluteString)")
+                
+                // CRITICAL: Don't complete the extension immediately
+                // iOS needs the extension to stay alive for the app switch to work
+                // Open the URL and wait a moment before completing
+                context.open(appURL) { [weak self] success in
+                    print("Extension: Open result - success: \(success)")
+                    
+                    if success {
+                        // App opened successfully - wait longer to ensure switch completes
+                        // The extension sheet will be dismissed automatically when app opens
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            print("Extension: Completing extension request after successful open")
+                            self?.extensionContext?.completeRequest(returningItems: nil)
                         }
-                    }
-                } else {
-                    // Fallback if extensionContext is nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        self.extensionContext?.completeRequest(returningItems: nil)
+                    } else {
+                        // Open failed - complete quickly
+                        print("Extension: Failed to open app, completing anyway")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            self?.extensionContext?.completeRequest(returningItems: nil)
+                        }
                     }
                 }
             } else {
-                // Fallback: just complete and let notification handle it
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                // Fallback: just complete and rely on notification/app activation
+                print("Extension: Could not construct app URL, using fallback")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     self.extensionContext?.completeRequest(returningItems: nil)
                 }
             }
@@ -177,25 +201,35 @@ class ShareViewController: UIViewController {
     }
 }
 
-// Simplified view that just confirms and opens main app
+// Simplified view that shows loading state while app opens
 struct QuickShareView: View {
     let url: URL
+    let autoConfirm: Bool
     let onConfirm: () -> Void
     let onCancel: () -> Void
+    
+    @State private var isOpening = false
     
     var body: some View {
         NavigationStack {
             VStack(spacing: 24) {
                 Spacer()
                 
-                // Icon
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 60))
-                    .foregroundColor(.blue)
-                    .padding(.bottom, 8)
+                // Loading indicator
+                if isOpening {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .padding(.bottom, 8)
+                } else {
+                    // Icon
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 60))
+                        .foregroundColor(.blue)
+                        .padding(.bottom, 8)
+                }
                 
                 // Title
-                Text("Share to Notes")
+                Text(isOpening ? "Opening NotesApp..." : "Share to Notes")
                     .font(.title2)
                     .fontWeight(.bold)
                 
@@ -227,7 +261,7 @@ struct QuickShareView: View {
                 
                 // Description
                 VStack(spacing: 8) {
-                    Text("This will open NotesApp")
+                    Text(isOpening ? "Switching to NotesApp..." : "This will open NotesApp")
                         .font(.subheadline)
                         .foregroundColor(.primary)
                     Text("to analyze the content with AI")
@@ -237,37 +271,52 @@ struct QuickShareView: View {
                 
                 Spacer()
                 
-                // Action Button
-                Button {
-                    #if os(iOS)
-                    HapticFeedback.success()
-                    #endif
-                    onConfirm()
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.title3)
-                        Text("Continue in NotesApp")
-                            .fontWeight(.semibold)
+                // Action Button (hidden if auto-opening)
+                if !autoConfirm {
+                    Button {
+                        #if os(iOS)
+                        HapticFeedback.success()
+                        #endif
+                        isOpening = true
+                        onConfirm()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "arrow.right.circle.fill")
+                                .font(.title3)
+                            Text("Continue in NotesApp")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
+                    .padding(.horizontal, 32)
+                    .padding(.bottom, 32)
                 }
-                .padding(.horizontal, 32)
-                .padding(.bottom, 32)
             }
             .navigationTitle("Share to Notes")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        #if os(iOS)
-                        HapticFeedback.selection()
-                        #endif
-                        onCancel()
+                if !autoConfirm {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            #if os(iOS)
+                            HapticFeedback.selection()
+                            #endif
+                            onCancel()
+                        }
+                    }
+                }
+            }
+            .onAppear {
+                if autoConfirm {
+                    // Auto-confirm immediately to open app right away
+                    isOpening = true
+                    // Use minimal delay just to show loading state briefly
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        onConfirm()
                     }
                 }
             }

@@ -5,6 +5,7 @@ import UIKit
 
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.scenePhase) var scenePhase
     @State private var selectedTab = 0
     
     var body: some View {
@@ -45,6 +46,16 @@ struct ContentView: View {
             // Check for pending URLs when app becomes active
             Task { @MainActor in
                 await appState.processPendingNote()
+            }
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            // When scene becomes active, check for pending URLs
+            if newPhase == .active {
+                // Switch to Home tab to show the note creation
+                selectedTab = 0
+                Task { @MainActor in
+                    await appState.processPendingNote()
+                }
             }
         }
         #if os(iOS)

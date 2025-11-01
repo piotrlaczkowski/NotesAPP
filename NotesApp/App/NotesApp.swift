@@ -28,22 +28,26 @@ struct NotesApp: App {
     
     @MainActor
     private func handleURLScheme(url: URL) async {
-        // Parse URL: notesapp://process?url=...
-        if url.host == "process" {
+        print("NotesApp: Received URL scheme: \(url.absoluteString)")
+        
+        // Handle both "open" and "process" URLs
+        if url.host == "open" || url.host == "process" {
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
             if let urlQuery = components?.queryItems?.first(where: { $0.name == "url" }),
                let urlString = urlQuery.value,
                let targetURL = URL(string: urlString) {
-                // Process the URL using AppState
+                print("NotesApp: Processing URL from scheme: \(targetURL.absoluteString)")
+                // Process the URL using AppState immediately
+                // This will show the ReviewNoteView sheet automatically
                 await appState.processURLFromShareExtension(url: targetURL)
-            } else {
-                // Fallback: check App Group for pending URL
-                await appState.processPendingNote()
+                print("NotesApp: URL processing completed, review view should be shown")
+                return
             }
-        } else {
-            // Fallback: check App Group for pending URL
-            await appState.processPendingNote()
         }
+        
+        // Fallback: check App Group for pending URL
+        print("NotesApp: Falling back to checking App Group for pending URL")
+        await appState.processPendingNote()
     }
 }
 
