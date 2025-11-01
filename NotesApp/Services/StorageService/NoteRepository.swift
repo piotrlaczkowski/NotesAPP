@@ -16,30 +16,58 @@ actor NoteRepository {
         
         try? fileManager.createDirectory(at: documentsURL, withIntermediateDirectories: true)
         
-        // Load notes - init is nonisolated, so we use Task to access isolated state
-        Task { @MainActor in
+        // Load notes asynchronously to avoid blocking initialization
+        Task {
             await self.loadNotes()
         }
     }
     
     private func loadNotes() async {
+        // Perform file I/O off the actor to avoid blocking
         let notesURL = documentsURL.appendingPathComponent("notes.json")
-        guard let data = try? Data(contentsOf: notesURL),
-              let decoded = try? JSONDecoder().decode([Note].self, from: data) else {
-            notes = []
-            return
-        }
-        notes = decoded
+        let loadedNotes = await Task.detached(priority: .utility) {
+            // Use FileHandle for truly async file reading
+            guard FileManager.default.fileExists(atPath: notesURL.path) else {
+                return [Note]()
+            }
+            
+            // Read file data - still sync but in detached task to avoid blocking main thread
+            // For small JSON files, this is acceptable as it's off the main thread
+            guard let data = try? Data(contentsOf: notesURL),
+                  let decoded = try? JSONDecoder().decode([Note].self, from: data) else {
+                return [Note]()
+            }
+            return decoded
+        }.value
+        
+        // Update actor-isolated state
+        notes = loadedNotes
     }
     
     private func saveNotes() {
+        // Since we're in an actor, file I/O won't block other actors
+        // But we should still do it asynchronously to avoid blocking the caller
         let notesURL = documentsURL.appendingPathComponent("notes.json")
-        guard let data = try? JSONEncoder().encode(notes) else { return }
-        try? data.write(to: notesURL)
+        let notesToSave = notes
         
-        // Post notification on main thread so UI can update
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: Self.notesDidChangeNotification, object: nil)
+        Task.detached(priority: .utility) { [notesToSave, notesURL] in
+            // Perform file I/O off the actor with proper async handling
+            guard let data = try? JSONEncoder().encode(notesToSave) else { return }
+            
+            // Write asynchronously
+            do {
+                try await Task.detached(priority: .utility) {
+                    try data.write(to: notesURL, options: .atomic)
+                }.value
+            } catch {
+                // Silently fail - will retry on next save
+                return
+            }
+            
+            // Post notification on main thread so UI can update
+            await MainActor.run {
+                NotificationCenter.default.post(name: NoteRepository.notesDidChangeNotification, object: nil)
+            }
         }
     }
     

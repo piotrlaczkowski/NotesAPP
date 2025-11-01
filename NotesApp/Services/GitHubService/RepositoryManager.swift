@@ -7,21 +7,47 @@ actor RepositoryManager {
     private let commitQueue = CommitQueue.shared
     private let noteRepository = NoteRepository.shared
     
+    // Cache config to avoid repeated UserDefaults access
+    private var cachedConfig: (owner: String, repo: String, branch: String)?
+    
+    private func getConfig() async -> (owner: String, repo: String, branch: String) {
+        if let cached = cachedConfig {
+            return cached
+        }
+        let config = await Task.detached(priority: .utility) {
+            (
+                owner: UserDefaults.standard.string(forKey: "githubOwner") ?? "",
+                repo: UserDefaults.standard.string(forKey: "githubRepo") ?? "",
+                branch: UserDefaults.standard.string(forKey: "githubBranch") ?? "main"
+            )
+        }.value
+        cachedConfig = config
+        return config
+    }
+    
     private var owner: String {
-        UserDefaults.standard.string(forKey: "githubOwner") ?? ""
+        // This shouldn't be called directly - use getConfig() instead
+        // Keeping for backward compatibility but it should be async
+        return cachedConfig?.owner ?? ""
     }
     private var repo: String {
-        UserDefaults.standard.string(forKey: "githubRepo") ?? ""
+        return cachedConfig?.repo ?? ""
     }
     private var branch: String {
-        UserDefaults.standard.string(forKey: "githubBranch") ?? "main"
+        return cachedConfig?.branch ?? "main"
     }
     
     private init() {}
     
+    /// Clear cached config (call when settings change)
+    func clearConfigCache() {
+        cachedConfig = nil
+    }
+    
     func commit(note: Note) async throws {
-        // Check if GitHub is configured
-        guard isGitHubConfigured() else {
+        // Check if GitHub is configured (async to avoid blocking)
+        let config = await getConfig()
+        guard !config.owner.isEmpty && !config.repo.isEmpty && GitHubAuth.shared.hasAuthentication() else {
             // Not configured - just queue for later
             await commitQueue.enqueue(note: note)
             var updatedNote = note
@@ -47,9 +73,9 @@ actor RepositoryManager {
             // First, ensure the repository is initialized (in case it's empty)
             do {
                 try await githubClient.initializeEmptyRepository(
-                    owner: owner,
-                    repo: repo,
-                    branch: branch
+                    owner: config.owner,
+                    repo: config.repo,
+                    branch: config.branch
                 )
             } catch {
                 // Repository might already be initialized, that's fine
@@ -60,9 +86,9 @@ actor RepositoryManager {
                 path: path,
                 content: base64Content,
                 message: message,
-                owner: owner,
-                repo: repo,
-                branch: branch
+                owner: config.owner,
+                repo: config.repo,
+                branch: config.branch
             )
             
             // Update note sync status
@@ -95,8 +121,8 @@ actor RepositoryManager {
         }
     }
     
-    private func isGitHubConfigured() -> Bool {
-        guard !owner.isEmpty && !repo.isEmpty else {
+    private func isGitHubConfigured(config: (owner: String, repo: String, branch: String)) -> Bool {
+        guard !config.owner.isEmpty && !config.repo.isEmpty else {
             return false
         }
         // Check if authentication is set up
@@ -104,20 +130,23 @@ actor RepositoryManager {
     }
     
     func pull() async throws {
+        // Get config asynchronously
+        let config = await getConfig()
+        
         // Only pull if GitHub is fully configured
-        guard isGitHubConfigured() else {
+        guard isGitHubConfigured(config: config) else {
             // Silently return if not configured - no error
             return
         }
         
         // Verify we have owner and repo
-        guard !owner.isEmpty && !repo.isEmpty else {
+        guard !config.owner.isEmpty && !config.repo.isEmpty else {
             return
         }
         
         do {
             // Recursively pull notes from all category folders
-            let baseFolders = try await listCategoryFolders(owner: owner, repo: repo, branch: branch)
+            let baseFolders = try await listCategoryFolders(owner: config.owner, repo: config.repo, branch: config.branch)
             
             // Process files from all folders
             for folder in baseFolders {
@@ -125,9 +154,9 @@ actor RepositoryManager {
                 do {
                     files = try await githubClient.listFiles(
                         path: folder,
-                        owner: owner,
-                        repo: repo,
-                        branch: branch
+                        owner: config.owner,
+                        repo: config.repo,
+                        branch: config.branch
                     )
                 } catch let error as GitHubError {
                     // If folder doesn't exist, skip it
@@ -143,9 +172,9 @@ actor RepositoryManager {
                     do {
                         let content = try await githubClient.getFile(
                             path: "\(folder)/\(file.name)",
-                            owner: owner,
-                            repo: repo,
-                            branch: branch
+                            owner: config.owner,
+                            repo: config.repo,
+                            branch: config.branch
                         )
                         
                         if let note = parseMarkdownContent(content, filename: file.name) {
@@ -174,8 +203,11 @@ actor RepositoryManager {
     }
     
     func sync() async {
+        // Get config asynchronously
+        let config = await getConfig()
+        
         // Only sync if GitHub is configured
-        guard isGitHubConfigured() else {
+        guard isGitHubConfigured(config: config) else {
             // Just process any pending commits that might be queued
             await commitQueue.processQueue()
             return
@@ -192,7 +224,8 @@ actor RepositoryManager {
     
     /// Push all pending notes to GitHub
     func push() async throws {
-        guard isGitHubConfigured() else {
+        let config = await getConfig()
+        guard isGitHubConfigured(config: config) else {
             throw RepositoryError.notConfigured
         }
         

@@ -5,6 +5,7 @@ struct NoteDetailView: View {
     @Environment(\.dismiss) var dismiss
     @StateObject private var viewModel = NoteDetailViewModel()
     @State private var showDeleteConfirmation = false
+    @State private var isReady = false
     
     var body: some View {
         NavigationStack {
@@ -130,6 +131,11 @@ struct NoteDetailView: View {
                 if let error = viewModel.errorMessage {
                     Text(error)
                 }
+            }
+            .task {
+                // Mark view as ready after initial render to prevent blocking
+                try? await Task.sleep(nanoseconds: 50_000_000) // 50ms delay
+                isReady = true
             }
         }
     }

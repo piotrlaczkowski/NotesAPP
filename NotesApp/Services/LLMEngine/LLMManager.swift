@@ -12,10 +12,14 @@ class LLMManager: ObservableObject {
     private let modelDownloader = ModelDownloader.shared
     
     private init() {
-        // Load saved model preference
-        let savedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "LFM2-1.2B"
-        Task {
-            await loadModel(savedModel)
+        // Load saved model preference asynchronously to avoid blocking init
+        Task.detached(priority: .utility) { [weak self] in
+            let savedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "LFM2-1.2B"
+            await MainActor.run {
+                Task {
+                    await self?.loadModel(savedModel)
+                }
+            }
         }
     }
     
@@ -46,7 +50,10 @@ class LLMManager: ObservableObject {
             llmService = service
             currentModel = modelName
             isModelLoaded = true
-            UserDefaults.standard.set(modelName, forKey: "selectedModel")
+            // Save model preference asynchronously to avoid blocking
+            Task.detached(priority: .utility) {
+                UserDefaults.standard.set(modelName, forKey: "selectedModel")
+            }
         } catch {
             print("Error loading model: \(error)")
             isModelLoaded = false

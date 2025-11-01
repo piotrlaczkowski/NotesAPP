@@ -67,7 +67,27 @@ actor URLContentExtractor {
         request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 30.0
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // Wrap in timeout to prevent indefinite hangs (35 second absolute timeout)
+        let (data, response): (Data, URLResponse) = try await withThrowingTaskGroup(of: (Data, URLResponse).self) { group in
+            // Network request task
+            group.addTask {
+                try await URLSession.shared.data(for: request)
+            }
+            
+            // Timeout task
+            group.addTask {
+                try await Task.sleep(nanoseconds: 35_000_000_000) // 35 seconds
+                throw URLError(.timedOut)
+            }
+            
+            // Wait for whichever completes first
+            guard let result = try await group.next() else {
+                throw URLError(.unknown)
+            }
+            
+            group.cancelAll() // Cancel remaining tasks
+            return result
+        }
         
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {

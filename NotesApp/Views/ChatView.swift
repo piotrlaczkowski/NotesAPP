@@ -17,6 +17,7 @@ struct ChatView: View {
     @State private var messageText = ""
     @FocusState private var isTextFieldFocused: Bool
     @State private var inputHeight: CGFloat = 44
+    @State private var selectedNote: Note?
     
     var body: some View {
         NavigationStack {
@@ -38,7 +39,9 @@ struct ChatView: View {
                                 }
                                 
                                 ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
-                                    MessageBubble(message: message)
+                                    MessageBubble(message: message) { note in
+                                        selectedNote = note
+                                    }
                                         .id(message.id)
                                         .transition(.asymmetric(
                                             insertion: .move(edge: message.isUser ? .trailing : .leading)
@@ -113,9 +116,15 @@ struct ChatView: View {
             } message: {
                 Text(viewModel.errorMessage ?? "An error occurred")
             }
+            .sheet(item: $selectedNote) { note in
+                NoteDetailView(note: note)
+            }
             .onAppear {
                 // Refresh model status when view appears (e.g., returning from Settings)
-                viewModel.refreshModelStatus()
+                // Do this asynchronously to avoid blocking
+                Task {
+                    await viewModel.refreshModelStatus()
+                }
             }
             .onChange(of: viewModel.isModelLoaded) { oldValue, newValue in
                 // UI will automatically update via @Published property
@@ -141,7 +150,13 @@ struct ChatView: View {
 
 struct MessageBubble: View {
     let message: ChatMessage
+    let onNoteTap: ((Note) -> Void)?
     @State private var isVisible = false
+    
+    init(message: ChatMessage, onNoteTap: ((Note) -> Void)? = nil) {
+        self.message = message
+        self.onNoteTap = onNoteTap
+    }
     
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -172,10 +187,21 @@ struct MessageBubble: View {
                         .shadow(color: Color.blue.opacity(0.3), radius: 8, x: 0, y: 4)
                     
                     if !message.sources.isEmpty {
-                        Label("\(message.sources.count) source\(message.sources.count == 1 ? "" : "s")", systemImage: "doc.text")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .padding(.trailing, 8)
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.on.doc.fill")
+                                .font(.caption2)
+                            Text("\(message.sources.count) source\(message.sources.count == 1 ? "" : "s")")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                        }
+                        .foregroundColor(.white.opacity(0.8))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(.white.opacity(0.2))
+                        )
+                        .padding(.trailing, 8)
                     }
                 }
             } else {
@@ -241,7 +267,7 @@ struct MessageBubble: View {
                     .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
                     
                     if !message.sources.isEmpty {
-                        SourceNotesView(sources: message.sources)
+                        SourceNotesView(sources: message.sources, onNoteTap: onNoteTap)
                     }
                 }
                 
@@ -261,46 +287,155 @@ struct MessageBubble: View {
 struct SourceNotesView: View {
     let sources: [Note]
     @State private var isExpanded = false
+    var onNoteTap: ((Note) -> Void)?
     
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
-            ForEach(sources, id: \.id) { note in
+            VStack(spacing: 12) {
+                ForEach(sources, id: \.id) { note in
+                    SourceNoteCard(note: note) {
+                        onNoteTap?(note)
+                    }
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.on.doc.fill")
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                Text("\(sources.count) source note\(sources.count == 1 ? "" : "s")")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.blue)
+            }
+            .padding(.vertical, 4)
+        }
+        .font(.caption2)
+    }
+}
+
+struct SourceNoteCard: View {
+    let note: Note
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(alignment: .top, spacing: 12) {
+                // Note icon
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.blue.opacity(0.15), Color.purple.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 40, height: 40)
+                    
+                    Image(systemName: "doc.text.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.blue, Color.purple],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                
+                // Note content
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Image(systemName: "doc.text.fill")
-                            .font(.caption)
+                    // Title and category
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let category = note.category {
+                            HStack(spacing: 4) {
+                                Image(systemName: "tag.fill")
+                                    .font(.caption2)
+                                Text(category)
+                                    .font(.caption2)
+                                    .fontWeight(.medium)
+                            }
                             .foregroundColor(.blue)
+                        }
+                        
                         Text(note.title)
                             .font(.subheadline)
                             .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
                     }
                     
+                    // Summary
                     if !note.summary.isEmpty {
                         Text(note.summary)
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                    
+                    // Tags (if any)
+                    if !note.tags.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 4) {
+                                ForEach(note.tags.prefix(3), id: \.self) { tag in
+                                    Text(tag)
+                                        .font(.caption2)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.blue.opacity(0.1))
+                                        .foregroundColor(.blue)
+                                        .cornerRadius(4)
+                                }
+                                if note.tags.count > 3 {
+                                    Text("+\(note.tags.count - 3)")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    
+                    // URL if available
+                    if let url = note.url {
+                        HStack(spacing: 4) {
+                            Image(systemName: "link")
+                                .font(.caption2)
+                            Text(url.host ?? "Link")
+                                .font(.caption2)
+                                .lineLimit(1)
+                        }
+                        .foregroundColor(.blue.opacity(0.8))
                     }
                 }
-                .padding(.vertical, 6)
-                .padding(.horizontal, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.systemGray6).opacity(0.5))
-                .cornerRadius(8)
+                
+                Spacer()
+                
+                // Chevron indicator
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary.opacity(0.5))
             }
-            .padding(.top, 4)
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "doc.on.doc.fill")
-                    .font(.caption2)
-                Text("\(sources.count) source note\(sources.count == 1 ? "" : "s")")
-                    .font(.caption2)
-                    .fontWeight(.medium)
-            }
-            .foregroundColor(.blue)
-            .padding(.leading, 4)
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.systemGray6).opacity(0.6))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+            )
         }
-        .font(.caption2)
+        .buttonStyle(PlainButtonStyle())
+        #if os(iOS)
+        .onTapGesture {
+            HapticFeedback.selection()
+            onTap()
+        }
+        #endif
     }
 }
 
@@ -390,16 +525,20 @@ class ChatViewModel: ObservableObject {
     private var modelStatusTask: Task<Void, Never>?
     
     init() {
-        // Initialize model status
-        refreshModelStatus()
+        // Initialize model status asynchronously to avoid blocking init
+        Task { @MainActor in
+            await refreshModelStatus()
+        }
         
         // Periodically check model status (simple polling since LLMManager doesn't publish isModelLoaded)
+        // Start with a delay to avoid blocking view initialization
         modelStatusTask = Task {
+            // Initial delay to let view render first
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+            
             while !Task.isCancelled {
-                await MainActor.run {
-                    refreshModelStatus()
-                }
-                try? await Task.sleep(nanoseconds: 2_000_000_000) // Check every 2 seconds
+                await refreshModelStatus()
+                try? await Task.sleep(nanoseconds: 3_000_000_000) // Check every 3 seconds (reduced frequency)
             }
         }
     }
@@ -408,8 +547,11 @@ class ChatViewModel: ObservableObject {
         modelStatusTask?.cancel()
     }
     
-    func refreshModelStatus() {
+    func refreshModelStatus() async {
+        // Access LLMManager - this is a simple property read, shouldn't block
+        // But we're already on MainActor, so this should be fast
         let newStatus = llmManager.isModelLoaded
+        
         if newStatus != isModelLoaded {
             isModelLoaded = newStatus
         }
@@ -463,8 +605,8 @@ class ChatViewModel: ObservableObject {
         }
         
         do {
-            // Refresh model status before generating
-            refreshModelStatus()
+            // Refresh model status before generating (async, non-blocking)
+            await refreshModelStatus()
             
             // Double-check model is loaded
             guard isModelLoaded else {

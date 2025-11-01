@@ -281,7 +281,9 @@ class SettingsViewModel: ObservableObject {
     private let llmManager = LLMManager.shared
     
     func loadModelStatus() async {
-        let currentModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "LFM2-1.2B"
+        let currentModel = await Task.detached(priority: .utility) {
+            UserDefaults.standard.string(forKey: "selectedModel") ?? "LFM2-1.2B"
+        }.value
         let isDownloaded = await modelDownloader.isModelDownloaded(currentModel)
         
         if isDownloaded {
@@ -1185,8 +1187,10 @@ struct GitHubRepositoryView: View {
             await MainActor.run {
                 showSuccess = true
                 isTesting = false
-                // Save settings (already saved via @AppStorage, but trigger sync)
-                UserDefaults.standard.synchronize()
+                // Clear config cache so new settings are picked up
+                Task {
+                    await RepositoryManager.shared.clearConfigCache()
+                }
             }
             
             // Trigger sync if configured

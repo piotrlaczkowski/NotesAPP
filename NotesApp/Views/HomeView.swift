@@ -222,7 +222,9 @@ struct HomeView: View {
                 }
             }
             .sheet(item: $selectedNote) { note in
+                // Present immediately without blocking
                 NoteDetailView(note: note)
+                    .interactiveDismissDisabled(false)
             }
             .alert("Delete Note", isPresented: $showDeleteConfirmation) {
                 Button("Delete", role: .destructive) {
@@ -239,26 +241,42 @@ struct HomeView: View {
         }
         .task {
             await viewModel.loadNotes()
-            // Initialize with all notes
+            // Initialize with all notes directly (don't trigger search on initial load)
             filteredNotesResult = viewModel.notes
+        }
+        .onChange(of: searchText) { oldValue, newValue in
+            // Only update if text actually changed (not just on view update)
+            guard oldValue != newValue else { return }
             updateFilteredNotes()
         }
-        .onChange(of: searchText) { _, _ in
+        .onChange(of: selectedCategory) { oldValue, newValue in
+            guard oldValue != newValue else { return }
             updateFilteredNotes()
         }
-        .onChange(of: selectedCategory) { _, _ in
+        .onChange(of: selectedTags) { oldValue, newValue in
+            guard oldValue != newValue else { return }
             updateFilteredNotes()
         }
-        .onChange(of: selectedTags) { _, _ in
+        .onChange(of: viewModel.notes) { oldNotes, newNotes in
+            // Only update if notes array actually changed (check count and IDs for performance)
+            guard oldNotes.count != newNotes.count || 
+                  oldNotes.map(\.id) != newNotes.map(\.id) else { return }
+            // Update caches when notes change
+            lastNotesCount = newNotes.count
+            cachedCategories = Array(Set(newNotes.compactMap { $0.category })).sorted()
+            cachedTags = Array(Set(newNotes.flatMap { $0.tags })).sorted()
             updateFilteredNotes()
         }
-        .onChange(of: viewModel.notes) { _, _ in
-            updateFilteredNotes()
+        .onDisappear {
+            // Cancel any pending search when view disappears
+            searchTask?.cancel()
         }
     }
     
     @State private var filteredNotesResult: [Note] = []
     @State private var isSearching = false
+    @State private var searchTask: Task<Void, Never>?
+    @State private var lastSearchUpdate = Date()
     
     private var filteredNotes: [Note] {
         // Return cached result if available, otherwise return all notes
@@ -266,7 +284,24 @@ struct HomeView: View {
     }
     
     private func updateFilteredNotes() {
-        Task {
+        // Cancel any existing search task
+        searchTask?.cancel()
+        
+        // Prevent too frequent updates (debounce)
+        let now = Date()
+        guard now.timeIntervalSince(lastSearchUpdate) > 0.2 else {
+            // Schedule delayed update
+            searchTask = Task {
+                try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
+                guard !Task.isCancelled else { return }
+                updateFilteredNotes()
+            }
+            return
+        }
+        lastSearchUpdate = now
+        
+        // Create new search task
+        searchTask = Task {
             await MainActor.run {
                 isSearching = true
             }
@@ -277,27 +312,40 @@ struct HomeView: View {
                 }
             }
             
+            // Check if cancelled before starting
+            guard !Task.isCancelled else { return }
+            
             var notes = viewModel.notes
             let searchService = SearchService.shared
             
-            // Apply category filter
+            // Apply category filter (synchronous, fast)
             if let selectedCategory = selectedCategory {
                 notes = await searchService.filterByCategory(notes, category: selectedCategory)
             }
             
-            // Apply tag filter
+            // Check cancellation again
+            guard !Task.isCancelled else { return }
+            
+            // Apply tag filter (synchronous, fast)
             if !selectedTags.isEmpty {
                 notes = await searchService.filterByTags(notes, tags: selectedTags)
             }
             
-            // Apply enhanced search
+            // Check cancellation again
+            guard !Task.isCancelled else { return }
+            
+            // Apply enhanced search (can be slow)
             if !searchText.isEmpty {
                 let searchResults = await searchService.search(notes: notes, query: searchText)
                 notes = searchResults.map { $0.note }
             }
             
+            // Final cancellation check before updating UI
+            guard !Task.isCancelled else { return }
+            
             await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.3)) {
+                // Only update if task wasn't cancelled
+                if !Task.isCancelled {
                     filteredNotesResult = notes
                 }
             }
@@ -324,8 +372,18 @@ struct HomeView: View {
         !uniqueCategories.isEmpty
     }
     
+    // Cache computed properties to avoid recalculation on every render
+    @State private var cachedCategories: [String] = []
+    @State private var cachedTags: [String] = []
+    @State private var lastNotesCount: Int = 0
+    
     private var uniqueCategories: [String] {
-        Array(Set(viewModel.notes.compactMap { $0.category })).sorted()
+        // Use cache if available and notes count matches, otherwise compute
+        if !cachedCategories.isEmpty && viewModel.notes.count == lastNotesCount {
+            return cachedCategories
+        }
+        // Fallback to direct computation (cache updated in onChange)
+        return Array(Set(viewModel.notes.compactMap { $0.category })).sorted()
     }
     
     private var hasTags: Bool {
@@ -333,7 +391,12 @@ struct HomeView: View {
     }
     
     private var allTags: [String] {
-        Array(Set(viewModel.notes.flatMap { $0.tags })).sorted()
+        // Use cache if available and notes count matches, otherwise compute
+        if !cachedTags.isEmpty && viewModel.notes.count == lastNotesCount {
+            return cachedTags
+        }
+        // Fallback to direct computation (cache updated in onChange)
+        return Array(Set(viewModel.notes.flatMap { $0.tags })).sorted()
     }
     
     private var headerSection: some View {
@@ -374,9 +437,8 @@ struct HomeView: View {
                         title: "All",
                         isSelected: selectedCategory == nil
                     ) {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            selectedCategory = nil
-                        }
+                        // Remove animation to avoid blocking
+                        selectedCategory = nil
                         #if os(iOS)
                         HapticFeedback.selection()
                         #endif
@@ -387,9 +449,8 @@ struct HomeView: View {
                             title: category,
                             isSelected: selectedCategory == category
                         ) {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                selectedCategory = selectedCategory == category ? nil : category
-                            }
+                            // Remove animation to avoid blocking
+                            selectedCategory = selectedCategory == category ? nil : category
                             #if os(iOS)
                             HapticFeedback.selection()
                             #endif
@@ -425,9 +486,8 @@ struct HomeView: View {
                 HStack(spacing: 10) {
                     if !selectedTags.isEmpty {
                         Button {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                selectedTags.removeAll()
-                            }
+                            // Remove animation to avoid blocking
+                            selectedTags.removeAll()
                             #if os(iOS)
                             HapticFeedback.selection()
                             #endif
@@ -458,12 +518,11 @@ struct HomeView: View {
                             tag: tag,
                             isSelected: selectedTags.contains(tag)
                         ) {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                if selectedTags.contains(tag) {
-                                    selectedTags.remove(tag)
-                                } else {
-                                    selectedTags.insert(tag)
-                                }
+                            // Remove animation to avoid blocking
+                            if selectedTags.contains(tag) {
+                                selectedTags.remove(tag)
+                            } else {
+                                selectedTags.insert(tag)
                             }
                             #if os(iOS)
                             HapticFeedback.selection()
@@ -491,20 +550,16 @@ struct HomeView: View {
             ],
             spacing: 20
         ) {
-            ForEach(Array(filteredNotes.enumerated()), id: \.element.id) { index, note in
+            // Use direct ForEach without enumeration to reduce overhead
+            ForEach(filteredNotes, id: \.id) { note in
                 NotesCardView(note: note) {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        selectedNote = note
-                    }
+                    // Set immediately without animation to avoid blocking gesture
+                    selectedNote = note
                     #if os(iOS)
                     HapticFeedback.selection()
                     #endif
                 }
-                .animatedCard(index: index)
-                .transition(.asymmetric(
-                    insertion: .scale(scale: 0.9).combined(with: .opacity),
-                    removal: .scale(scale: 0.8).combined(with: .opacity)
-                ))
+                // Remove expensive animations and transitions from grid view
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(role: .destructive) {
                         noteToDelete = note
@@ -525,9 +580,8 @@ struct HomeView: View {
             HStack(spacing: 16) {
                 ForEach(Array(filteredNotes.enumerated()), id: \.element.id) { index, note in
                     NotesCardView(note: note) {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            selectedNote = note
-                        }
+                        // Set immediately without animation to avoid blocking gesture
+                        selectedNote = note
                         #if os(iOS)
                         HapticFeedback.selection()
                         #endif

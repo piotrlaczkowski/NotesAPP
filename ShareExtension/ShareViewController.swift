@@ -137,8 +137,16 @@ class ShareViewController: UIViewController {
     }
     
     private func saveURLToProcess(url: URL) async {
+        // Small delay to let system initialize cfprefsd connection
+        try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+        
         // Save URL to shared UserDefaults - main app will process it
-        guard let sharedDefaults = UserDefaults(suiteName: "group.com.piotrlaczkowski.NotesApp") else {
+        // Initialize UserDefaults fully asynchronously to avoid blocking
+        let sharedDefaults = await Task.detached(priority: .userInitiated) {
+            UserDefaults(suiteName: "group.com.piotrlaczkowski.NotesApp")
+        }.value
+        
+        guard let sharedDefaults = sharedDefaults else {
             print("Warning: App Group UserDefaults not available")
             await MainActor.run {
                 extensionContext?.completeRequest(returningItems: nil)
@@ -147,15 +155,15 @@ class ShareViewController: UIViewController {
         }
         
         // Save the URL string for the main app to process
-        await MainActor.run {
+        // Do this off main thread to avoid blocking
+        await Task.detached(priority: .userInitiated) {
             sharedDefaults.set(url.absoluteString, forKey: "pendingURLToAnalyze")
-            sharedDefaults.synchronize()
-            
-            // Post notification to wake up the main app
+            // Don't call synchronize() - it blocks and iOS handles persistence automatically
+        }.value
+        
+        // Post notification on main thread
+        await MainActor.run {
             NotificationCenter.default.post(name: NSNotification.Name("NewURLShared"), object: nil)
-            
-            // Save complete - URL is now in App Group and will be processed when app opens
-            print("Extension: URL saved to App Group successfully")
             
             // Try to open the app, but don't rely on it working
             // iOS security may prevent automatic switching

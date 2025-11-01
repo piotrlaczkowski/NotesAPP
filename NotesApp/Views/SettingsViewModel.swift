@@ -23,7 +23,9 @@ class SettingsStatusViewModel: ObservableObject {
     }
     
     func refreshLLMStatus() async {
-        let currentModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "LFM2-1.2B"
+        let currentModel = await Task.detached(priority: .utility) {
+            UserDefaults.standard.string(forKey: "selectedModel") ?? "LFM2-1.2B"
+        }.value
         let isDownloaded = await modelDownloader.isModelDownloaded(currentModel)
         
         if isDownloaded && llmManager.isModelLoaded && llmManager.currentModel == currentModel {
@@ -44,8 +46,14 @@ class SettingsStatusViewModel: ObservableObject {
     }
     
     func refreshGitHubRepoStatus() async {
-        let owner = UserDefaults.standard.string(forKey: "githubOwner") ?? ""
-        let repo = UserDefaults.standard.string(forKey: "githubRepo") ?? ""
+        let config = await Task.detached(priority: .utility) {
+            (
+                owner: UserDefaults.standard.string(forKey: "githubOwner") ?? "",
+                repo: UserDefaults.standard.string(forKey: "githubRepo") ?? ""
+            )
+        }.value
+        let owner = config.owner
+        let repo = config.repo
         
         if !owner.isEmpty && !repo.isEmpty {
             if authManager.hasAuthentication() {
