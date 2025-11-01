@@ -1203,7 +1203,8 @@ class MLCLLMService: LLMService {
                 let fullResponse: String
                 if let context = context, !context.isEmpty {
                     let noteCount = context.components(separatedBy: "Note ").count - 1
-                    let queryWords = prompt.lowercased().components(separatedBy: .whitespaces).filter { $0.count > 3 }
+                    let promptLower = prompt.lowercased()
+                    let queryWords = promptLower.components(separatedBy: CharacterSet.whitespaces).filter { $0.count > 3 }
                     let contextLower = context.lowercased()
                     let hasRelevantInfo = queryWords.contains { contextLower.contains($0) }
                     
@@ -1211,7 +1212,7 @@ class MLCLLMService: LLMService {
                     var response = "Based on your \(noteCount) relevant note\(noteCount == 1 ? "" : "s"), "
                     
                     // Try to extract key information from the context
-                    let queryWordsForExtraction = promptLower.components(separatedBy: .whitespaces)
+                    let queryWordsForExtraction = promptLower.components(separatedBy: CharacterSet.whitespaces)
                         .filter { $0.count > 3 }
                         .map { $0.lowercased() }
                     
