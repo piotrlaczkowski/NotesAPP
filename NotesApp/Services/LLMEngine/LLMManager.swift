@@ -60,6 +60,22 @@ class LLMManager: ObservableObject {
         return try await service.analyzeContent(content: content, metadata: metadata)
     }
     
+    func generateChatResponse(prompt: String, context: String?) async throws -> String {
+        guard let service = llmService else {
+            throw LLMError(message: "Model not loaded")
+        }
+        return try await service.generateChatResponse(prompt: prompt, context: context)
+    }
+    
+    func generateChatResponseStream(prompt: String, context: String?) -> AsyncThrowingStream<String, Error> {
+        guard let service = llmService else {
+            return AsyncThrowingStream { continuation in
+                continuation.finish(throwing: LLMError(message: "Model not loaded"))
+            }
+        }
+        return service.generateChatResponseStream(prompt: prompt, context: context)
+    }
+    
     var service: LLMService? {
         llmService
     }

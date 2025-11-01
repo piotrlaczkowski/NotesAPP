@@ -6,6 +6,8 @@ protocol LLMService {
     func generateSummary(content: String) async throws -> String
     func suggestTags(content: String) async throws -> [String]
     func generateTitle(content: String) async throws -> String
+    func generateChatResponse(prompt: String, context: String?) async throws -> String
+    func generateChatResponseStream(prompt: String, context: String?) -> AsyncThrowingStream<String, Error>
     var isModelLoaded: Bool { get }
 }
 

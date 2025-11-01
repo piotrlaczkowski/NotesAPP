@@ -1100,5 +1100,146 @@ class MLCLLMService: LLMService {
         
         return advantages.joined(separator: ". ")
     }
+    
+    func generateChatResponse(prompt: String, context: String?) async throws -> String {
+        guard isModelLoaded else {
+            throw LLMError(message: "Model not loaded")
+        }
+        
+        // Build the prompt with context if provided
+        var fullPrompt = ""
+        
+        if let context = context, !context.isEmpty {
+            fullPrompt = """
+            <|startoftext|><|im_start|>system
+            You are a helpful AI assistant that can answer questions based on the user's notes.
+            
+            Here are relevant notes from the user's collection:
+            \(context)
+            
+            Use this information to answer questions accurately. If the notes don't contain relevant information, say so politely.<|im_end|>
+            <|im_start|>user
+            \(prompt)<|im_end|>
+            <|im_start|>assistant
+            """
+        } else {
+            fullPrompt = """
+            <|startoftext|><|im_start|>system
+            You are a helpful AI assistant.<|im_end|>
+            <|im_start|>user
+            \(prompt)<|im_end|>
+            <|im_start|>assistant
+            """
+        }
+        
+        // TODO: When MLC-LLM is integrated, use actual model inference here
+        // For now, provide a helpful response that acknowledges the model is loaded
+        // In production, this will call the actual LLM with the prompt
+        
+        // Simulated response (remove when actual LLM is integrated)
+        if let context = context, !context.isEmpty {
+            // Try to provide a context-aware response
+            let contextLower = context.lowercased()
+            let promptLower = prompt.lowercased()
+            
+            // Extract some key information from context to show we're using it
+            let noteCount = context.components(separatedBy: "Note ").count - 1
+            var response = "I found \(noteCount) relevant note\(noteCount == 1 ? "" : "s") in your collection. "
+            
+            // Check if we can find relevant information
+            let queryWords = promptLower.components(separatedBy: .whitespaces).filter { $0.count > 3 }
+            let hasRelevantInfo = queryWords.contains { contextLower.contains($0) }
+            
+            if hasRelevantInfo {
+                response += "The notes appear to contain relevant information about your query. "
+            }
+            
+            response += "Note: The LLM inference engine is still being integrated. Once fully connected, I'll be able to provide detailed answers based on your notes using the LFM2 model. For now, you can see which notes were found as sources below."
+            return response
+        }
+        
+        return "I'm ready to chat! The model is loaded and ready. Note: The LLM inference engine is still being integrated with the MLC-LLM framework. Once fully connected, I'll be able to provide detailed answers using the LFM2 model. You can ask me questions and I'll search through your notes to find relevant information."
+    }
+    
+    func generateChatResponseStream(prompt: String, context: String?) -> AsyncThrowingStream<String, Error> {
+        guard isModelLoaded else {
+            return AsyncThrowingStream { continuation in
+                continuation.finish(throwing: LLMError(message: "Model not loaded"))
+            }
+        }
+        
+        // Build the full prompt
+        let fullPrompt: String
+        if let context = context, !context.isEmpty {
+            fullPrompt = """
+            <|startoftext|><|im_start|>system
+            You are a helpful AI assistant that can answer questions based on the user's notes.
+            
+            Here are relevant notes from the user's collection:
+            \(context)
+            
+            Use this information to answer questions accurately. If the notes don't contain relevant information, say so politely.<|im_end|>
+            <|im_start|>user
+            \(prompt)<|im_end|>
+            <|im_start|>assistant
+            """
+        } else {
+            fullPrompt = """
+            <|startoftext|><|im_start|>system
+            You are a helpful AI assistant.<|im_end|>
+            <|im_start|>user
+            \(prompt)<|im_end|>
+            <|im_start|>assistant
+            """
+        }
+        
+        // TODO: When MLC-LLM is integrated, use actual streaming inference
+        // For now, simulate streaming by chunking the response
+        return AsyncThrowingStream { continuation in
+            Task {
+                // Generate the full response (placeholder)
+                let fullResponse: String
+                if let context = context, !context.isEmpty {
+                    let noteCount = context.components(separatedBy: "Note ").count - 1
+                    let queryWords = prompt.lowercased().components(separatedBy: .whitespaces).filter { $0.count > 3 }
+                    let contextLower = context.lowercased()
+                    let hasRelevantInfo = queryWords.contains { contextLower.contains($0) }
+                    
+                    // Better context-aware response for RAG queries
+                    var response = "Based on your \(noteCount) relevant note\(noteCount == 1 ? "" : "s"), "
+                    if hasRelevantInfo {
+                        response += "I found information related to your question. "
+                    }
+                    response += "The notes are ready to be analyzed once the LLM inference engine is fully integrated with the MLC-LLM framework. "
+                    response += "For now, you can review the source notes below to see what was found."
+                    fullResponse = response
+                } else {
+                    // Generic chat response - more natural
+                    let lowerPrompt = prompt.lowercased()
+                    if lowerPrompt.contains("hello") || lowerPrompt.contains("hi") || lowerPrompt.contains("hey") {
+                        fullResponse = "Hello! I'm your AI assistant. I can help answer questions and chat with you. Once the LLM inference is fully integrated, I'll be able to have more detailed conversations."
+                    } else if lowerPrompt.contains("what can you do") || lowerPrompt.contains("help") {
+                        fullResponse = "I'm designed to help you with questions and chat. When you ask about your notes (using phrases like 'my notes' or 'what I saved'), I'll search through them to find relevant information. For general questions, I can have conversations with you. The full LLM capabilities will be available once MLC-LLM integration is complete."
+                    } else if lowerPrompt.contains("thank") {
+                        fullResponse = "You're welcome! I'm here to help anytime."
+                    } else {
+                        fullResponse = "I understand your question. Once the LLM inference engine is fully integrated with MLC-LLM, I'll be able to provide detailed answers. For now, feel free to ask about your notes or chat with me!"
+                    }
+                }
+                
+                // Simulate streaming by sending chunks word by word
+                let words = fullResponse.components(separatedBy: " ")
+                for (index, word) in words.enumerated() {
+                    let chunk = index == 0 ? word : " \(word)"
+                    continuation.yield(chunk)
+                    
+                    // Simulate typing speed (adjust delay as needed)
+                    try? await Task.sleep(nanoseconds: 30_000_000) // 30ms per word for smoother streaming
+                }
+                
+                continuation.finish()
+            }
+        }
+    }
 }
 

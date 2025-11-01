@@ -16,11 +16,17 @@ struct ContentView: View {
                 }
                 .tag(0)
             
+            ChatView()
+                .tabItem {
+                    Label("Chat", systemImage: "bubble.left.and.bubble.right")
+                }
+                .tag(1)
+            
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
                 }
-                .tag(1)
+                .tag(2)
         }
         .sheet(item: $appState.pendingNoteToReview) { note in
             NavigationStack {
