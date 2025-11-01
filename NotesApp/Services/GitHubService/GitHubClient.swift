@@ -8,6 +8,37 @@ actor GitHubClient {
     
     private init() {}
     
+    /// Initialize an empty repository by creating an initial commit
+    /// This ensures the main branch exists
+    func initializeEmptyRepository(owner: String, repo: String, branch: String = "main") async throws {
+        // Try to create a .gitkeep file to initialize the repo
+        let initContent = "# Notes Repository\n\nInitialized by NotesApp\n".data(using: .utf8)!.base64EncodedString()
+        
+        let url = URL(string: "\(baseURL)/repos/\(owner)/\(repo)/contents/.gitkeep")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        if let authHeader = auth.getAuthHeader() {
+            request.setValue(authHeader, forHTTPHeaderField: "Authorization")
+        }
+        
+        let body: [String: Any] = [
+            "message": "Initialize repository",
+            "content": initContent,
+            "branch": branch
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (_, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw GitHubError.apiError("Failed to initialize repository")
+        }
+    }
+    
     func createOrUpdateFile(path: String, content: String, message: String, owner: String, repo: String, branch: String = "main") async throws {
         // Get SHA of existing file if it exists
         let sha = try? await getFileSHA(path: path, owner: owner, repo: repo, branch: branch)

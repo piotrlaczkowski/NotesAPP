@@ -43,6 +43,37 @@ class AppState: ObservableObject {
         Task {
             await performAutoSync()
         }
+        
+        // Observe appearance changes
+        observeAppearanceChanges()
+    }
+    
+    private func observeAppearanceChanges() {
+        // Initial theme application
+        applyTheme()
+        
+        // Watch for changes to appearance setting
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.applyTheme()
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func applyTheme() {
+        let appearance = UserDefaults.standard.integer(forKey: "appearance")
+        
+        switch appearance {
+        case 0: // Light
+            colorScheme = .light
+        case 1: // Dark
+            colorScheme = .dark
+        case 2: // System
+            colorScheme = nil
+        default:
+            colorScheme = nil
+        }
     }
     
     func processPendingNote() async {

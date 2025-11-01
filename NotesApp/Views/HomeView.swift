@@ -13,30 +13,45 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ZStack {
+                // Background gradient
+                LinearGradient(
+                    colors: [
+                        Color(.systemBackground),
+                        Color(.systemBackground).opacity(0.95)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                
                 if viewModel.notes.isEmpty && !viewModel.isLoading {
                     EmptyStateView()
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 0) {
+                        LazyVStack(spacing: 24) {
+                            // Header with stats
+                            headerSection
+                                .padding(.horizontal, 20)
+                                .padding(.top, 16)
+                            
                             // Filter sections
                             if hasFilters {
-                                VStack(spacing: 12) {
+                                VStack(spacing: 16) {
                                     // Category filter
                                     if hasCategories {
                                         categoryFilterSection
-                                            .padding(.horizontal)
-                                            .padding(.top, 8)
+                                            .padding(.horizontal, 20)
                                             .transition(.move(edge: .top).combined(with: .opacity))
                                     }
                                     
                                     // Tag filter
                                     if hasTags {
                                         tagFilterSection
-                                            .padding(.horizontal)
-                                            .padding(.bottom, 8)
+                                            .padding(.horizontal, 20)
                                             .transition(.move(edge: .top).combined(with: .opacity))
                                     }
                                 }
+                                .padding(.bottom, 8)
                                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showFilters)
                             }
                             
@@ -75,8 +90,34 @@ struct HomeView: View {
                     .animation(.easeInOut(duration: 0.2), value: viewModel.isLoading || isSearching)
                 }
             }
-            .navigationTitle("Notes")
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "Search notes...")
+            .overlay(alignment: .topTrailing) {
+                if viewModel.isLoading {
+                    VStack {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Syncing...")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule()
+                                .fill(.ultraThinMaterial)
+                                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
+                        )
+                        .padding(.trailing, 16)
+                        .padding(.top, 8)
+                        
+                        Spacer()
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .automatic) {
                     Button {
@@ -121,12 +162,29 @@ struct HomeView: View {
                         }
                         .buttonStyle(.borderless)
                         
-                        Button {
-                            #if os(iOS)
-                            HapticFeedback.selection()
-                            #endif
-                            Task {
-                                await viewModel.sync()
+                        Menu {
+                            Button {
+                                Task {
+                                    await viewModel.sync()
+                                }
+                            } label: {
+                                Label("Sync (Push & Pull)", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                            
+                            Button {
+                                Task {
+                                    await viewModel.push()
+                                }
+                            } label: {
+                                Label("Push to GitHub", systemImage: "arrow.up.circle")
+                            }
+                            
+                            Button {
+                                Task {
+                                    await viewModel.pull()
+                                }
+                            } label: {
+                                Label("Pull from GitHub", systemImage: "arrow.down.circle")
                             }
                         } label: {
                             Image(systemName: "arrow.clockwise")
@@ -249,22 +307,50 @@ struct HomeView: View {
         Array(Set(viewModel.notes.flatMap { $0.tags })).sorted()
     }
     
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("My Notes")
+                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                    
+                    Text("\(filteredNotes.count) \(filteredNotes.count == 1 ? "note" : "notes")")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+            }
+        }
+        .padding(.vertical, 8)
+    }
+    
     private var categoryFilterSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Category")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 4)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "tag.fill")
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                Text("Categories")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                Spacer()
+            }
             
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     CategoryFilterChip(
                         title: "All",
                         isSelected: selectedCategory == nil
                     ) {
-                        withAnimation {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                             selectedCategory = nil
                         }
+                        #if os(iOS)
+                        HapticFeedback.selection()
+                        #endif
                     }
                     
                     ForEach(uniqueCategories, id: \.self) { category in
@@ -272,42 +358,69 @@ struct HomeView: View {
                             title: category,
                             isSelected: selectedCategory == category
                         ) {
-                            withAnimation {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                 selectedCategory = selectedCategory == category ? nil : category
                             }
+                            #if os(iOS)
+                            HapticFeedback.selection()
+                            #endif
                         }
                     }
                 }
                 .padding(.vertical, 4)
+                .padding(.horizontal, 4)
             }
         }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.secondarySystemBackground))
+                .opacity(0.6)
+        )
     }
     
     private var tagFilterSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Tags")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 4)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "tag.fill")
+                    .font(.caption)
+                    .foregroundColor(.purple)
+                Text("Tags")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                Spacer()
+            }
             
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     if !selectedTags.isEmpty {
                         Button {
-                            withAnimation {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                 selectedTags.removeAll()
                             }
+                            #if os(iOS)
+                            HapticFeedback.selection()
+                            #endif
                         } label: {
-                            HStack(spacing: 4) {
+                            HStack(spacing: 6) {
                                 Image(systemName: "xmark.circle.fill")
-                                Text("Clear")
+                                Text("Clear All")
                             }
                             .font(.subheadline)
+                            .fontWeight(.medium)
                             .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.red)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color.red, Color.red.opacity(0.8)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
                             .clipShape(Capsule())
+                            .shadow(color: Color.red.opacity(0.3), radius: 4, x: 0, y: 2)
                         }
                     }
                     
@@ -316,28 +429,38 @@ struct HomeView: View {
                             tag: tag,
                             isSelected: selectedTags.contains(tag)
                         ) {
-                            withAnimation {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                 if selectedTags.contains(tag) {
                                     selectedTags.remove(tag)
                                 } else {
                                     selectedTags.insert(tag)
                                 }
                             }
+                            #if os(iOS)
+                            HapticFeedback.selection()
+                            #endif
                         }
                     }
                 }
                 .padding(.vertical, 4)
+                .padding(.horizontal, 4)
             }
         }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(.secondarySystemBackground))
+                .opacity(0.6)
+        )
     }
     
     private var notesGrid: some View {
         LazyVGrid(
             columns: [
-                GridItem(.flexible(), spacing: 12),
-                GridItem(.flexible(), spacing: 12)
+                GridItem(.flexible(), spacing: 16),
+                GridItem(.flexible(), spacing: 16)
             ],
-            spacing: 16
+            spacing: 20
         ) {
             ForEach(Array(filteredNotes.enumerated()), id: \.element.id) { index, note in
                 NotesCardView(note: note) {
@@ -349,10 +472,15 @@ struct HomeView: View {
                     #endif
                 }
                 .animatedCard(index: index)
+                .transition(.asymmetric(
+                    insertion: .scale(scale: 0.9).combined(with: .opacity),
+                    removal: .scale(scale: 0.8).combined(with: .opacity)
+                ))
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical)
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .padding(.bottom, 32)
     }
     
     private var notesCarousel: some View {
@@ -375,8 +503,8 @@ struct HomeView: View {
                     .animation(.spring(response: 0.4, dampingFraction: 0.8).delay(Double(index) * 0.03), value: filteredNotes.count)
                 }
             }
-            .padding(.horizontal)
-            .padding(.vertical)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
         }
     }
 }
@@ -395,14 +523,38 @@ struct CategoryFilterChip: View {
         Button(action: action) {
             Text(title)
                 .font(.subheadline)
-                .fontWeight(isSelected ? .semibold : .regular)
+                .fontWeight(isSelected ? .semibold : .medium)
                 .foregroundColor(isSelected ? .white : .primary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(isSelected ? Color.blue : Color(.systemGray5))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(
+                    Group {
+                        if isSelected {
+                            LinearGradient(
+                                colors: [Color.blue, Color.blue.opacity(0.85)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        } else {
+                            LinearGradient(
+                                colors: [Color(.systemGray5), Color(.systemGray5)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        }
+                    }
+                )
                 .clipShape(Capsule())
+                .shadow(
+                    color: isSelected ? Color.blue.opacity(0.3) : Color.clear,
+                    radius: isSelected ? 6 : 0,
+                    x: 0,
+                    y: isSelected ? 3 : 0
+                )
         }
         .buttonStyle(PlainButtonStyle())
+        .scaleEffect(isSelected ? 1.05 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
     }
 }
 
@@ -433,6 +585,40 @@ class HomeViewModel: ObservableObject {
     func sync() async {
         await RepositoryManager.shared.sync()
         await loadNotes()
+    }
+    
+    func push() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            try await RepositoryManager.shared.push()
+            await loadNotes()
+            #if os(iOS)
+            HapticFeedback.success()
+            #endif
+        } catch {
+            errorMessage = "Push failed: \(error.localizedDescription)"
+            #if os(iOS)
+            HapticFeedback.error()
+            #endif
+        }
+    }
+    
+    func pull() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            try await RepositoryManager.shared.pull()
+            await loadNotes()
+            #if os(iOS)
+            HapticFeedback.success()
+            #endif
+        } catch {
+            errorMessage = "Pull failed: \(error.localizedDescription)"
+            #if os(iOS)
+            HapticFeedback.error()
+            #endif
+        }
     }
     
     func analyzeURL(_ urlString: String) async {
@@ -587,64 +773,115 @@ class HomeViewModel: ObservableObject {
 
 struct EmptyStateView: View {
     var body: some View {
-        VStack(spacing: 24) {
-            ZStack {
-                Circle()
-                    .fill(Color.blue.opacity(0.1))
-                    .frame(width: 120, height: 120)
-                
-                Image(systemName: "note.text.badge.plus")
-                    .font(.system(size: 50))
-                    .foregroundColor(.blue)
-            }
+        VStack(spacing: 32) {
+            Spacer()
             
-            VStack(spacing: 8) {
-                Text("No Notes Yet")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                
-                Text("Start collecting interesting content")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-            
-            VStack(spacing: 12) {
-                HStack(spacing: 16) {
-                    FeatureIcon(icon: "safari", text: "Share from Safari")
-                    FeatureIcon(icon: "link", text: "Add URLs manually")
+            VStack(spacing: 24) {
+                ZStack {
+                    // Animated gradient background
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.blue.opacity(0.15),
+                                    Color.purple.opacity(0.1),
+                                    Color.blue.opacity(0.08)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 140, height: 140)
+                        .blur(radius: 20)
+                    
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.blue.opacity(0.2),
+                                    Color.purple.opacity(0.15)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 120, height: 120)
+                    
+                    Image(systemName: "note.text.badge.plus")
+                        .font(.system(size: 52, weight: .medium))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.blue, Color.purple],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                 }
                 
-                HStack(spacing: 16) {
-                    FeatureIcon(icon: "sparkles", text: "AI analysis")
-                    FeatureIcon(icon: "arrow.triangle.2.circlepath", text: "Auto-sync to GitHub")
+                VStack(spacing: 12) {
+                    Text("Start Your Collection")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                    
+                    Text("Add your first note to begin organizing your knowledge")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
                 }
+                
+                VStack(spacing: 20) {
+                    HStack(spacing: 24) {
+                        FeatureIcon(icon: "safari", text: "Share from Safari", color: .blue)
+                        FeatureIcon(icon: "link", text: "Add URLs", color: .green)
+                    }
+                    
+                    HStack(spacing: 24) {
+                        FeatureIcon(icon: "sparkles", text: "AI Analysis", color: .purple)
+                        FeatureIcon(icon: "arrow.triangle.2.circlepath", text: "GitHub Sync", color: .orange)
+                    }
+                }
+                .padding(.top, 16)
             }
-            .padding(.top, 8)
+            
+            Spacer()
         }
-        .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 32)
     }
 }
 
 struct FeatureIcon: View {
     let icon: String
     let text: String
+    let color: Color
     
     var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundColor(.blue)
-                .frame(width: 44, height: 44)
-                .background(Color.blue.opacity(0.1))
-                .clipShape(Circle())
+        VStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(color.opacity(0.15))
+                    .frame(width: 56, height: 56)
+                
+                Image(systemName: icon)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [color, color.opacity(0.8)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
             
             Text(text)
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .fontWeight(.medium)
+                .foregroundColor(.primary)
                 .multilineTextAlignment(.center)
         }
-        .frame(width: 100)
+        .frame(width: 110)
     }
 }
 

@@ -44,6 +44,18 @@ actor RepositoryManager {
         let base64Content = contentData.base64EncodedString()
         
         do {
+            // First, ensure the repository is initialized (in case it's empty)
+            do {
+                try await githubClient.initializeEmptyRepository(
+                    owner: owner,
+                    repo: repo,
+                    branch: branch
+                )
+            } catch {
+                // Repository might already be initialized, that's fine
+                // Continue with the commit
+            }
+            
             try await githubClient.createOrUpdateFile(
                 path: path,
                 content: base64Content,
@@ -169,13 +181,36 @@ actor RepositoryManager {
             return
         }
         
-        // Process pending commits
+        // Process pending commits (push local changes)
         await commitQueue.processQueue()
         
         // Pull latest changes (if configured)
         // Use try? to silently fail if pull doesn't work
         // This prevents error spam in logs
         try? await pull()
+    }
+    
+    /// Push all pending notes to GitHub
+    func push() async throws {
+        guard isGitHubConfigured() else {
+            throw RepositoryError.notConfigured
+        }
+        
+        // Process all pending commits in the queue
+        await commitQueue.processQueue()
+        
+        // Also commit any notes that are marked as pending
+        let allNotes = await noteRepository.fetchAll()
+        let pendingNotes = allNotes.filter { $0.syncStatus == .pending }
+        
+        for note in pendingNotes {
+            do {
+                try await commit(note: note)
+            } catch {
+                // Continue with other notes even if one fails
+                print("Failed to commit note \(note.id): \(error.localizedDescription)")
+            }
+        }
     }
     
     /// Generate a unique filename for a note

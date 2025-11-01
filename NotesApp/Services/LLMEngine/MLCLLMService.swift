@@ -18,7 +18,8 @@ class MLCLLMService: LLMService {
         }
         
         // Build enriched context from content and metadata
-        let enrichedContext = buildEnrichedContext(content: content, metadata: metadata)
+        // Currently not used for LLM inference but kept for future implementation
+        _ = buildEnrichedContext(content: content, metadata: metadata)
         
         // TODO: Implement actual LLM inference using enrichedContext
         // For now, return enhanced analysis with heuristics using all available information

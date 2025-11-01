@@ -6,20 +6,20 @@ struct NotesCardView: View {
     
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 16) {
                 // Header with category and sync status
                 HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 8) {
                         if let category = note.category {
                             CategoryBadge(category: category)
                         }
                         
                         Text(note.title)
-                            .font(.headline)
-                            .fontWeight(.semibold)
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
                             .foregroundColor(.primary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     
                     Spacer()
@@ -33,58 +33,97 @@ struct NotesCardView: View {
                     .foregroundColor(.secondary)
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 
                 // Tags
                 if !note.tags.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 8) {
                             ForEach(note.tags.prefix(4), id: \.self) { tag in
                                 TagView(text: tag)
                             }
                             if note.tags.count > 4 {
                                 Text("+\(note.tags.count - 4)")
                                     .font(.caption2)
+                                    .fontWeight(.medium)
                                     .foregroundColor(.secondary)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 3)
-                                    .background(Color.secondary.opacity(0.1))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.secondary.opacity(0.15))
                                     .clipShape(Capsule())
                             }
                         }
+                        .padding(.horizontal, 2)
                     }
                 }
                 
                 // Footer with URL and date
-                HStack {
+                HStack(alignment: .center) {
                     if let url = note.url {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 6) {
                             Image(systemName: "link")
                                 .font(.caption2)
+                                .foregroundColor(.blue.opacity(0.8))
                             Text(url.host ?? "URL")
                                 .font(.caption)
+                                .fontWeight(.medium)
                                 .lineLimit(1)
+                                .foregroundColor(.blue)
                         }
-                        .foregroundColor(.blue)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.blue.opacity(0.1))
+                        .clipShape(Capsule())
                     }
                     
                     Spacer()
                     
-                    Text(note.dateCreated, style: .relative)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.caption2)
+                            .foregroundColor(.secondary.opacity(0.7))
+                        Text(note.dateCreated, style: .relative)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
-            .padding()
+            .padding(20)
             .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 4)
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(.systemBackground),
+                                Color(.systemBackground).opacity(0.98)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .shadow(color: Color.black.opacity(0.08), radius: 20, x: 0, y: 8)
+                    .shadow(color: Color.blue.opacity(0.04), radius: 12, x: 0, y: 4)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                // Category color stripe on the left edge
+                HStack(spacing: 0) {
+                    Rectangle()
+                        .fill(categoryStripeColor)
+                        .frame(width: 4)
+                    
+                    Spacer()
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 24))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24)
                     .strokeBorder(
                         LinearGradient(
-                            colors: [Color.blue.opacity(0.1), Color.purple.opacity(0.05)],
+                            colors: [
+                                Color.blue.opacity(0.12),
+                                Color.purple.opacity(0.06),
+                                Color.blue.opacity(0.03)
+                            ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -94,14 +133,44 @@ struct NotesCardView: View {
         }
         .buttonStyle(CardButtonStyle())
     }
+    
+    private var categoryStripeColor: Color {
+        guard let category = note.category else {
+            return Color.clear
+        }
+        
+        switch category {
+        case "Research Paper":
+            return .purple
+        case "Code Repository":
+            return .blue
+        case "Tutorial":
+            return .green
+        case "Article":
+            return .orange
+        case "Documentation":
+            return .cyan
+        case "News":
+            return .red
+        case "Video":
+            return .pink
+        case "Podcast":
+            return .indigo
+        case "Book":
+            return .brown
+        default:
+            return .gray
+        }
+    }
 }
 
 struct CardButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
-            .opacity(configuration.isPressed ? 0.9 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .opacity(configuration.isPressed ? 0.88 : 1.0)
+            .brightness(configuration.isPressed ? -0.05 : 0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.75), value: configuration.isPressed)
     }
 }
 
