@@ -96,7 +96,7 @@ struct HomeView: View {
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "Search notes...")
             .overlay(alignment: .topTrailing) {
-                if viewModel.isLoading {
+                if viewModel.isSyncing {
                     VStack {
                         HStack(spacing: 8) {
                             ProgressView()
@@ -191,11 +191,11 @@ struct HomeView: View {
                         } label: {
                             Image(systemName: "arrow.clockwise")
                                 .font(.title3)
-                                .rotationEffect(.degrees(viewModel.isLoading ? 360 : 0))
-                                .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: viewModel.isLoading)
+                                .rotationEffect(.degrees(viewModel.isSyncing ? 360 : 0))
+                                .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: viewModel.isSyncing)
                         }
                         .buttonStyle(.borderless)
-                        .disabled(viewModel.isLoading)
+                        .disabled(viewModel.isSyncing)
                     }
                 }
             }
@@ -606,6 +606,7 @@ struct CategoryFilterChip: View {
 class HomeViewModel: ObservableObject {
     @Published var notes: [Note] = []
     @Published var isLoading = false
+    @Published var isSyncing = false  // Separate flag for actual sync operations
     @Published var showAddURLSheet = false
     @Published var errorMessage: String?
     
@@ -630,7 +631,7 @@ class HomeViewModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            // Automatically reload notes when they change
+            // Automatically reload notes when they change (silently, no loading indicator)
             Task {
                 await self?.loadNotes()
             }
@@ -638,9 +639,7 @@ class HomeViewModel: ObservableObject {
     }
     
     func loadNotes() async {
-        isLoading = true
-        defer { isLoading = false }
-        
+        // Don't show loading indicator for quick note loads
         notes = await noteRepository.fetchAll()
     }
     
@@ -653,13 +652,15 @@ class HomeViewModel: ObservableObject {
     }
     
     func sync() async {
+        isSyncing = true
+        defer { isSyncing = false }
         await RepositoryManager.shared.sync()
         await loadNotes()
     }
     
     func push() async {
-        isLoading = true
-        defer { isLoading = false }
+        isSyncing = true
+        defer { isSyncing = false }
         do {
             try await RepositoryManager.shared.push()
             await loadNotes()
@@ -675,8 +676,8 @@ class HomeViewModel: ObservableObject {
     }
     
     func pull() async {
-        isLoading = true
-        defer { isLoading = false }
+        isSyncing = true
+        defer { isSyncing = false }
         do {
             try await RepositoryManager.shared.pull()
             await loadNotes()

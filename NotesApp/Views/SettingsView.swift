@@ -130,6 +130,12 @@ struct SettingsView: View {
                                 }
                             }
                         }
+                        
+                        Divider()
+                            .padding(.vertical, 8)
+                        
+                        // Hugging Face Token (Optional)
+                        HuggingFaceTokenView()
                     }
                     .alert("Download Error", isPresented: $viewModel.showError) {
                         Button("OK") {
@@ -1185,6 +1191,123 @@ struct GitHubRepositoryView: View {
                 showError = true
                 isTesting = false
             }
+        }
+    }
+}
+
+struct HuggingFaceTokenView: View {
+    @State private var token = ""
+    @State private var showSuccess = false
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @State private var hasToken = ModelDownloader.hasHFToken()
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "key.horizontal.fill")
+                    .foregroundColor(.orange)
+                    .font(.system(size: 16))
+                
+                Text("Hugging Face Token (Optional)")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+            }
+            
+            if hasToken {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    Text("Token is set")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Button("Remove") {
+                        if KeychainHelper.delete(forKey: "huggingface_token") {
+                            hasToken = false
+                            token = ""
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundColor(.red)
+                }
+                .padding(.vertical, 4)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Token")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    SecureField("hf_xxxxxxxxxxxxxxxxxxxx", text: $token)
+                        .textContentType(.password)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .padding(10)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                    
+                    Text("Optional: Set a Hugging Face token for better download reliability and higher rate limits. Get one at huggingface.co/settings/tokens")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                
+                Button {
+                    guard !token.isEmpty else {
+                        errorMessage = "Please enter a token"
+                        showError = true
+                        return
+                    }
+                    
+                    // Validate token format (should start with hf_)
+                    if !token.hasPrefix("hf_") {
+                        errorMessage = "Hugging Face tokens should start with 'hf_'. Please check your token."
+                        showError = true
+                        return
+                    }
+                    
+                    if ModelDownloader.saveHFToken(token) {
+                        showSuccess = true
+                        hasToken = true
+                        token = ""
+                    } else {
+                        errorMessage = "Failed to save token. Please try again."
+                        showError = true
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Spacer()
+                        Image(systemName: "lock.circle.fill")
+                        Text("Save Token")
+                            .fontWeight(.semibold)
+                        Spacer()
+                    }
+                    .padding(.vertical, 10)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.orange, Color.orange.opacity(0.8)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 4)
+        .alert("Success", isPresented: $showSuccess) {
+            Button("OK") { }
+        } message: {
+            Text("Hugging Face token saved securely. This will improve download reliability.")
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK") { }
+        } message: {
+            Text(errorMessage)
+        }
+        .onAppear {
+            hasToken = ModelDownloader.hasHFToken()
         }
     }
 }
