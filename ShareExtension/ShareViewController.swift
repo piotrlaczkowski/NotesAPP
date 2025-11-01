@@ -11,39 +11,90 @@ class ShareViewController: UIViewController {
     
     private func setupShareView() {
         guard let extensionItem = extensionContext?.inputItems.first as? NSExtensionItem else {
+            presentShareNoteView(url: nil)
             return
         }
         
-        var url: URL?
-        var text: String?
-        
-        // Extract URL and text from extension item
+        // Extract URL from extension item - try multiple methods
         if let itemProviders = extensionItem.attachments {
+            var urlFound = false
+            
+            // Method 1: Direct URL type
             for provider in itemProviders {
                 if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                    provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { item, error in
+                    provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { [weak self] item, error in
+                        guard let self = self else { return }
                         if let urlItem = item as? URL {
-                            url = urlItem
+                            DispatchQueue.main.async {
+                                self.presentShareNoteView(url: urlItem)
+                            }
+                            return
+                        }
+                        // If URL type failed, try as string
+                        if let urlString = item as? String, let url = URL(string: urlString) {
                             DispatchQueue.main.async {
                                 self.presentShareNoteView(url: url)
+                            }
+                            return
+                        }
+                    }
+                    urlFound = true
+                    break
+                }
+            }
+            
+            // Method 2: Text that might be a URL
+            if !urlFound {
+                for provider in itemProviders {
+                    if provider.hasItemConformingToTypeIdentifier(UTType.text.identifier) {
+                        provider.loadItem(forTypeIdentifier: UTType.text.identifier, options: nil) { [weak self] item, error in
+                            guard let self = self else { return }
+                            if let textItem = item as? String {
+                                // Check if text is a URL
+                                if let url = URL(string: textItem.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                                    DispatchQueue.main.async {
+                                        self.presentShareNoteView(url: url)
+                                    }
+                                    return
+                                }
+                            }
+                        }
+                        break
+                    }
+                }
+            }
+            
+            // Method 3: Property list (for web pages)
+            for provider in itemProviders {
+                if provider.hasItemConformingToTypeIdentifier(UTType.propertyList.identifier) {
+                    provider.loadItem(forTypeIdentifier: UTType.propertyList.identifier, options: nil) { [weak self] item, error in
+                        guard let self = self else { return }
+                        if let dictionary = item as? [String: Any] {
+                            var urlString: String?
+                            // Try direct URL key
+                            if let url = dictionary["URL"] as? String {
+                                urlString = url
+                            }
+                            // Try JavaScript preprocessing results
+                            else if let jsResults = dictionary["NSExtensionJavaScriptPreprocessingResultsKey"] as? [String: Any],
+                                    let url = jsResults["URL"] as? String {
+                                urlString = url
+                            }
+                            
+                            if let urlString = urlString, let url = URL(string: urlString) {
+                                DispatchQueue.main.async {
+                                    self.presentShareNoteView(url: url)
+                                }
+                                return
                             }
                         }
                     }
                     break
-                } else if provider.hasItemConformingToTypeIdentifier(UTType.text.identifier) {
-                    provider.loadItem(forTypeIdentifier: UTType.text.identifier, options: nil) { item, error in
-                        if let textItem = item as? String {
-                            text = textItem
-                            if let urlFromText = URL(string: textItem) {
-                                url = urlFromText
-                                DispatchQueue.main.async {
-                                    self.presentShareNoteView(url: url)
-                                }
-                            }
-                        }
-                    }
                 }
             }
+        } else {
+            // No attachments found
+            presentShareNoteView(url: nil)
         }
     }
     

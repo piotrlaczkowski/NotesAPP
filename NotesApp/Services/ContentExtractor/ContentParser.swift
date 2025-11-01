@@ -44,15 +44,82 @@ struct ContentParser {
             .replacingOccurrences(of: "&#39;", with: "'", options: String.CompareOptions.caseInsensitive)
             .replacingOccurrences(of: "&apos;", with: "'", options: String.CompareOptions.caseInsensitive)
         
+        // Remove common noise patterns that appear in extracted content
+        let noisePatterns = [
+            "Skip to content",
+            "Skip to main content",
+            "Jump to navigation",
+            "Cookie consent",
+            "Accept cookies",
+            "We use cookies",
+            "Subscribe to newsletter",
+            "Newsletter signup",
+            "Related articles",
+            "Share this article",
+            "Advertisement",
+            "Ad:",
+            "Loading...",
+            "Please enable JavaScript",
+            "Enable cookies",
+            "This website uses cookies"
+        ]
+        
+        for pattern in noisePatterns {
+            text = text.replacingOccurrences(of: pattern, with: "", options: .caseInsensitive)
+        }
+        
+        // Remove navigation menus (usually repetitive short phrases)
+        let lines = text.components(separatedBy: .newlines)
+        let filteredLines = lines.filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Remove very short lines that are likely navigation items
+            if trimmed.count < 10 { return false }
+            // Remove lines that look like navigation (repetitive patterns)
+            let lowercased = trimmed.lowercased()
+            if lowercased == "home" || lowercased == "menu" || lowercased == "search" {
+                return false
+            }
+            return true
+        }
+        text = filteredLines.joined(separator: "\n")
+        
         // Clean up whitespace
         text = text
             .replacingOccurrences(of: "\\s+", with: " ", options: String.CompareOptions.regularExpression)
             .replacingOccurrences(of: "\\n\\s*\\n", with: "\n\n", options: String.CompareOptions.regularExpression)
             .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
         
-        // Limit content size
+        // Remove empty paragraphs
+        let paragraphs = text.components(separatedBy: "\n\n")
+        let meaningfulParagraphs = paragraphs.filter { paragraph in
+            let trimmed = paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.count >= 20 // Keep paragraphs with substantial content
+        }
+        text = meaningfulParagraphs.joined(separator: "\n\n")
+        
+        // Limit content size (keep most important content)
         if text.count > 15000 {
-            text = String(text.prefix(15000)) + "..."
+            // Try to keep first substantial paragraphs (usually most important)
+            let allParagraphs = text.components(separatedBy: "\n\n")
+            var selectedParagraphs: [String] = []
+            var totalLength = 0
+            
+            for paragraph in allParagraphs {
+                let trimmed = paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
+                if totalLength + trimmed.count <= 15000 {
+                    selectedParagraphs.append(paragraph)
+                    totalLength += trimmed.count
+                } else {
+                    break
+                }
+            }
+            
+            text = selectedParagraphs.joined(separator: "\n\n")
+            if text.count < 15000 {
+                text += "..."
+            } else {
+                text = String(text.prefix(15000)) + "..."
+            }
         }
         
         return text

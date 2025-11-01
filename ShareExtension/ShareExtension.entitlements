@@ -12,7 +12,7 @@
 	<true/>
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)com.yourname.NotesApp.ShareExtension</string>
+		<string>$(AppIdentifierPrefix)com.piotrlaczkowski.NotesApp.ShareExtension</string>
 	</array>
 </dict>
 </plist>

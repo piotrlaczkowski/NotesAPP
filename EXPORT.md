@@ -110,44 +110,155 @@ open ~/Desktop/NotesApp/NotesApp.app
 
 ### Prerequisites for iPhone Builds
 
-1. **Apple Developer Account** (enrollment may be required)
-2. **iPhone physically connected via USB** OR use **Simulator**
-3. **Valid signing certificate and provisioning profile**
+1. **Apple Developer Account** (free tier works - use your Apple ID)
+2. **iPhone physically connected via USB cable** OR use **iOS Simulator** (no physical connection needed)
+3. **Valid signing certificate** (Xcode will create this automatically)
 
-### Method 1: Using Xcode (Easiest)
+---
 
-#### 1. Set Signing & Capabilities
+## 🔌 **STEP-BY-STEP: Transfer App to Physical iPhone**
 
-- Open `NotesApp.xcodeproj` in Xcode
-- Select **NotesApp** target
-- Go to **Signing & Capabilities** tab
-- Select your **Team** from the dropdown
-- Verify **Bundle Identifier** is unique (e.g., `com.piotrlaczkowski.NotesApp`)
+### **Method 1: USB Cable Connection (Easiest & Recommended)**
 
-#### 2. Select iPhone Destination
+#### Step 1: Connect Your iPhone to Mac
 
-```bash
-In the top toolbar: Select your iPhone or iOS Simulator
-Device selector → Select your iPhone or preferred simulator
-```
+1. **Use a USB cable** (Lightning or USB-C depending on your iPhone)
+2. **Plug one end into your iPhone**, the other into your **Mac**
+3. **Unlock your iPhone** - you may see a prompt asking "Trust This Computer?"
+4. **Tap "Trust"** on your iPhone
+5. **Enter your iPhone passcode** if prompted
 
-#### 3. Build & Run
+#### Step 2: Trust Your Computer on iPhone
 
-```bash
-Product → Run (⌘R)
-```
+If you see "Trust This Computer?":
+- Tap **"Trust"**
+- Enter your **iPhone passcode**
 
-The app will build and automatically install on your iPhone!
-
-#### 4. Trust Developer Certificate (If Using Physical Device)
-
-On your iPhone:
+#### Step 3: Open Xcode
 
 ```bash
-Settings → General → VPN & Device Management
-→ Tap your Developer App Certificate
-→ Tap "Trust" → Confirm
+cd /Users/piotrlaczkowski/Desktop/NotesApp
+open NotesApp.xcodeproj
 ```
+
+#### Step 4: Configure Signing in Xcode
+
+1. In Xcode, click on **"NotesApp"** in the left sidebar (blue project icon at the top)
+2. Select the **"NotesApp"** target (under TARGETS)
+3. Click the **"Signing & Capabilities"** tab
+4. Check ✅ **"Automatically manage signing"**
+5. In the **"Team"** dropdown, select **your Apple ID** (or your Developer Team)
+6. If you see a warning about Bundle Identifier, Xcode will automatically fix it
+7. Xcode will show: ✅ **"Signing Certificate"** - this means it's ready!
+
+#### Step 5: Select Your iPhone as Destination
+
+1. **Look at the top toolbar** in Xcode (near the Play/Stop buttons)
+2. You'll see a device selector (usually shows "Any iOS Device" or a simulator name)
+3. **Click the device selector dropdown**
+4. Under **"iOS Device"**, you should see **your iPhone name** (e.g., "Piotr's iPhone")
+5. **Select your iPhone**
+
+⚠️ **If your iPhone doesn't appear:**
+- Make sure iPhone is **unlocked**
+- Make sure iPhone shows **"Trusted"** 
+- Try **unplugging and replugging** the USB cable
+- In Xcode: `Window → Devices and Simulators` → Check if iPhone appears there
+
+#### Step 6: Build and Install to iPhone
+
+1. **Press `⌘R`** (Command + R) OR click the **▶️ Play button** in Xcode
+2. Xcode will:
+   - ✅ Build the app
+   - ✅ Install it on your iPhone
+   - ✅ Launch it automatically
+
+🎉 **The app should now appear on your iPhone!**
+
+#### Step 7: Trust Developer Certificate on iPhone (First Time Only)
+
+When you try to open the app on your iPhone for the first time, you'll see:
+
+```
+"Untrusted Developer"
+```
+
+**To fix this:**
+
+1. On your iPhone, go to: **Settings → General → VPN & Device Management**
+   (On older iOS: Settings → General → Device Management or Profiles & Device Management)
+2. Tap on your **developer certificate** (should show your Apple ID email)
+3. Tap **"Trust [Your Apple ID]"**
+4. Tap **"Trust"** in the confirmation popup
+5. **Go back and open NotesApp** - it should work now!
+
+---
+
+### **Method 2: iOS Simulator (No Physical Connection Needed)**
+
+If you don't have a USB cable or want to test quickly:
+
+#### Step 1: Open Xcode
+
+```bash
+open NotesApp.xcodeproj
+```
+
+#### Step 2: Select Simulator
+
+1. In the **device selector** (top toolbar)
+2. Choose any **iPhone Simulator** (e.g., "iPhone 15", "iPhone 14 Pro")
+3. If you don't have simulators, Xcode will download them automatically
+
+#### Step 3: Build & Run
+
+Press **`⌘R`** - the simulator will open and your app will run!
+
+**Note:** Simulator apps don't transfer to your physical iPhone. Use Method 1 for that.
+
+---
+
+### **Method 3: Wireless Installation (Advanced)**
+
+Once you've installed via USB once, you can enable wireless:
+
+1. Connect iPhone via USB (first time only)
+2. In Xcode: `Window → Devices and Simulators`
+3. Select your iPhone
+4. Check ✅ **"Connect via network"**
+5. Disconnect USB - iPhone will appear as available wirelessly!
+
+---
+
+## 🔍 **Troubleshooting: iPhone Connection Issues**
+
+### iPhone Not Appearing in Xcode?
+
+1. **Check USB cable** - try a different cable
+2. **Unlock iPhone** - must be unlocked to appear
+3. **Trust the computer** - Settings → General → About → Trust
+4. **Restart Xcode** - Quit and reopen Xcode
+5. **Restart iPhone** - Power off and on
+6. **Check Xcode Devices window**: `Window → Devices and Simulators` (⌘⇧2)
+
+### "Unable to install NotesApp" Error?
+
+1. **Check storage** - iPhone might be full
+2. **Check signing** - Go to Signing & Capabilities, ensure Team is selected
+3. **Clean build**: `Product → Clean Build Folder` (⌘⇧K)
+4. **Restart Xcode**
+
+### "Untrusted Developer" Error?
+
+1. Go to iPhone: **Settings → General → VPN & Device Management**
+2. Tap your developer certificate
+3. Tap **"Trust"**
+
+### iPhone Keeps Disconnecting?
+
+1. Check USB port - try a different port
+2. Use original Apple cable if possible
+3. Disable "USB Restricted Mode" in iPhone Settings → Face ID & Passcode
 
 ### Method 2: Build via Command Line
 

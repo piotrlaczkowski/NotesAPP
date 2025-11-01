@@ -14,6 +14,9 @@ targets:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
+    dependencies:
+      - target: ShareExtension
+        embed: true
     sources:
       - path: NotesApp
         excludes:
@@ -57,7 +60,7 @@ targets:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
         keychain-access-groups:
-          - $(AppIdentifierPrefix)com.yourname.NotesApp
+          - $(AppIdentifierPrefix)com.piotrlaczkowski.NotesApp
 
   ShareExtension:
     type: app-extension
@@ -68,6 +71,7 @@ targets:
       - path: NotesApp/Services/ContentExtractor
       - path: NotesApp/Services/LLMEngine
       - path: NotesApp/Utilities
+      - path: NotesApp/Views/Components
     info:
       path: ShareExtension/Info.plist
       properties:
@@ -76,7 +80,7 @@ targets:
         CFBundleDisplayName: Share to NotesApp
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
-          NSExtensionPrincipalClass: ShareViewController
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
           NSExtensionAttributes:
             NSExtensionActivationRule:
               NSExtensionActivationSupportsWebURLWithMaxCount: 1
@@ -84,7 +88,7 @@ targets:
               NSExtensionActivationSupportsText: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.yourname.NotesApp.ShareExtension
+        PRODUCT_BUNDLE_IDENTIFIER: com.piotrlaczkowski.NotesApp.ShareExtension
         SWIFT_VERSION: "5.9"
         INFOPLIST_FILE: ShareExtension/Info.plist
         CODE_SIGN_STYLE: Automatic
@@ -101,6 +105,6 @@ targets:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
         keychain-access-groups:
-          - $(AppIdentifierPrefix)com.yourname.NotesApp.ShareExtension
+          - $(AppIdentifierPrefix)com.piotrlaczkowski.NotesApp.ShareExtension
 
 

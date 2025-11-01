@@ -17,16 +17,431 @@ class MLCLLMService: LLMService {
             throw LLMError(message: "Model not loaded")
         }
         
-        // Build enriched context from content and metadata
-        // Currently not used for LLM inference but kept for future implementation
-        _ = buildEnrichedContext(content: content, metadata: metadata)
+        // Step 1: Intelligently detect content type and characteristics
+        let contentType = detectContentType(content: content, metadata: metadata)
+        let contentCharacteristics = analyzeContentCharacteristics(content: content, metadata: metadata)
         
-        // TODO: Implement actual LLM inference using enrichedContext
-        // For now, return enhanced analysis with heuristics using all available information
+        // Step 2: Prepare optimized content for analysis
+        let optimizedContent = prepareOptimizedContent(
+            content: content,
+            contentType: contentType,
+            characteristics: contentCharacteristics
+        )
+        
+        // Step 3: Build intelligent, efficient context for LLM (when actual inference is implemented)
+        // Currently unused but kept for future LLM integration
+        let _ = buildIntelligentContext(
+            content: optimizedContent,
+            metadata: metadata,
+            contentType: contentType,
+            characteristics: contentCharacteristics
+        )
+        
+        // Step 4: Use adaptive analysis strategy based on content type
+        let analysis = performAdaptiveAnalysis(
+            content: optimizedContent,
+            metadata: metadata,
+            contentType: contentType,
+            characteristics: contentCharacteristics
+        )
+        
+        return analysis
+    }
+    
+    // MARK: - Content Type Detection
+    
+    private enum ContentType: CustomStringConvertible {
+        case researchPaper
+        case codeRepository
+        case technicalDocumentation
+        case articleBlog
+        case tutorial
+        case news
+        case video
+        case socialMedia
+        case academic
+        case general
+        
+        var description: String {
+            switch self {
+            case .researchPaper: return "Research Paper"
+            case .codeRepository: return "Code Repository"
+            case .technicalDocumentation: return "Technical Documentation"
+            case .articleBlog: return "Article/Blog"
+            case .tutorial: return "Tutorial"
+            case .news: return "News"
+            case .video: return "Video"
+            case .socialMedia: return "Social Media"
+            case .academic: return "Academic"
+            case .general: return "General"
+            }
+        }
+    }
+    
+    private func detectContentType(content: String, metadata: ContentMetadata?) -> ContentType {
+        let combined = (content.lowercased() + " " + (metadata?.contextString().lowercased() ?? "")).lowercased()
+        let domain = metadata?.domain?.lowercased() ?? ""
+        
+        // Domain-based detection (most reliable)
+        if domain.contains("arxiv") || domain.contains("pubmed") || domain.contains("researchgate") {
+            return .researchPaper
+        }
+        if domain.contains("github") || domain.contains("gitlab") || domain.contains("bitbucket") {
+            return .codeRepository
+        }
+        if domain.contains("stackoverflow") || domain.contains("stackexchange") {
+            return .technicalDocumentation
+        }
+        if domain.contains("youtube") || domain.contains("vimeo") || domain.contains("tiktok") {
+            return .video
+        }
+        if domain.contains("twitter") || domain.contains("x.com") || domain.contains("facebook") || domain.contains("linkedin") {
+            return .socialMedia
+        }
+        if domain.contains("medium") || domain.contains("substack") || domain.contains("dev.to") {
+            return .articleBlog
+        }
+        
+        // Content-based detection
+        if combined.contains("abstract") || combined.contains("doi:") || combined.contains("citation") ||
+           combined.contains("methodology") || combined.contains("results") || combined.contains("conclusion") {
+            return .researchPaper
+        }
+        if combined.contains("repository") || combined.contains("readme") || combined.contains("install") ||
+           combined.contains("npm install") || combined.contains("pip install") || combined.contains("clone") {
+            return .codeRepository
+        }
+        if combined.contains("api") || combined.contains("documentation") || combined.contains("reference") ||
+           combined.contains("getting started") || combined.contains("quick start") {
+            return .technicalDocumentation
+        }
+        if combined.contains("tutorial") || combined.contains("how to") || combined.contains("step by step") ||
+           combined.contains("guide") || combined.contains("walkthrough") {
+            return .tutorial
+        }
+        if combined.contains("breaking") || combined.contains("news") || combined.contains("report") ||
+           combined.contains("update") || combined.contains("announcement") {
+            return .news
+        }
+        
+        return .general
+    }
+    
+    private struct ContentCharacteristics {
+        let wordCount: Int
+        let hasStructuredSections: Bool
+        let hasCodeBlocks: Bool
+        let hasLists: Bool
+        let hasHeadings: Bool
+        let averageParagraphLength: Int
+        let complexity: ComplexityLevel
+    }
+    
+    private enum ComplexityLevel: CustomStringConvertible {
+        case simple      // < 500 words, straightforward
+        case moderate    // 500-2000 words
+        case complex     // 2000-5000 words
+        case veryComplex // > 5000 words
+        
+        var description: String {
+            switch self {
+            case .simple: return "Simple"
+            case .moderate: return "Moderate"
+            case .complex: return "Complex"
+            case .veryComplex: return "Very Complex"
+            }
+        }
+    }
+    
+    private func analyzeContentCharacteristics(content: String, metadata: ContentMetadata?) -> ContentCharacteristics {
+        let words = content.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        let wordCount = words.count
+        let paragraphs = content.components(separatedBy: "\n\n")
+        let avgParaLength = paragraphs.isEmpty ? 0 : paragraphs.map { $0.count }.reduce(0, +) / paragraphs.count
+        
+        let complexity: ComplexityLevel
+        switch wordCount {
+        case 0..<500: complexity = .simple
+        case 500..<2000: complexity = .moderate
+        case 2000..<5000: complexity = .complex
+        default: complexity = .veryComplex
+        }
+        
+        return ContentCharacteristics(
+            wordCount: wordCount,
+            hasStructuredSections: content.contains("##") || content.contains("# ") || content.contains("Section"),
+            hasCodeBlocks: content.contains("```") || content.contains("```"),
+            hasLists: content.contains("- ") || content.contains("* ") || content.contains("1. "),
+            hasHeadings: content.contains("#") || content.range(of: #"<h[1-6]>"#, options: .regularExpression) != nil,
+            averageParagraphLength: avgParaLength,
+            complexity: complexity
+        )
+    }
+    
+    // MARK: - Content Optimization
+    
+    private func prepareOptimizedContent(content: String, contentType: ContentType, characteristics: ContentCharacteristics) -> String {
+        var optimized = content
+        
+        // For very long content, intelligently extract the most relevant parts
+        if characteristics.complexity == .veryComplex || optimized.count > 10000 {
+            optimized = extractRelevantSections(
+                content: optimized,
+                contentType: contentType,
+                maxLength: 8000 // Keep more for better analysis
+            )
+        }
+        
+        // Clean and normalize
+        optimized = preprocessContentForSummary(optimized)
+        
+        return optimized
+    }
+    
+    private func extractRelevantSections(content: String, contentType: ContentType, maxLength: Int) -> String {
+        var sections: [String] = []
+        var currentLength = 0
+        
+        // Strategy varies by content type
+        switch contentType {
+        case .researchPaper:
+            // Keep: Abstract, Introduction, Conclusion
+            if let abstract = extractSection(content: content, marker: "abstract") {
+                sections.append(abstract)
+                currentLength += abstract.count
+            }
+            if let intro = extractSection(content: content, marker: "introduction") {
+                sections.append(intro)
+                currentLength += intro.count
+            }
+            if let conclusion = extractSection(content: content, marker: "conclusion") {
+                sections.append(conclusion)
+                currentLength += conclusion.count
+                if currentLength >= maxLength { return sections.joined(separator: "\n\n") }
+            }
+            
+        case .codeRepository:
+            // Keep: README intro, description, installation, usage
+            let readmeMarkers = ["description", "about", "overview", "installation", "usage", "getting started"]
+            for marker in readmeMarkers {
+                if let section = extractSection(content: content, marker: marker) {
+                    sections.append(section)
+                    currentLength += section.count
+                    if currentLength >= maxLength { break }
+                }
+            }
+            
+        case .articleBlog, .tutorial, .general:
+            // Keep: First sections and headings
+            let paragraphs = content.components(separatedBy: "\n\n")
+            for paragraph in paragraphs {
+                if currentLength + paragraph.count > maxLength { break }
+                // Prioritize paragraphs with headings or substantial content
+                if paragraph.hasPrefix("#") || paragraph.count > 100 {
+                    sections.append(paragraph)
+                    currentLength += paragraph.count
+                }
+            }
+            
+        default:
+            // For other types, use first substantial paragraphs
+            let paragraphs = content.components(separatedBy: "\n\n")
+            for paragraph in paragraphs.prefix(20) {
+                if currentLength + paragraph.count > maxLength { break }
+                if paragraph.count > 50 {
+                    sections.append(paragraph)
+                    currentLength += paragraph.count
+                }
+            }
+        }
+        
+        // Fallback: use first N characters if no sections found
+        if sections.isEmpty {
+            return String(content.prefix(maxLength))
+        }
+        
+        return sections.joined(separator: "\n\n")
+    }
+    
+    private func extractSection(content: String, marker: String) -> String? {
+        // Escape special regex characters in marker
+        let escapedMarker = NSRegularExpression.escapedPattern(for: marker)
+        
+        let patterns = [
+            "(?i)##\\s*\(escapedMarker)[^\\n]*\\n+([^#]{100,2000})",
+            "(?i)#\\s*\(escapedMarker)[^\\n]*\\n+([^#]{100,2000})",
+            "(?i)\\b\(escapedMarker)\\s*:?\\s*\\n+([^\\n]{100,2000})"
+        ]
+        
+        for pattern in patterns {
+            if let range = content.range(of: pattern, options: .regularExpression) {
+                let match = String(content[range])
+                if let contentStart = match.range(of: "\n") {
+                    let section = String(match[contentStart.upperBound...])
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    if section.count >= 100 {
+                        return section
+                    }
+                }
+            }
+        }
+        
+        // Fallback: Look for section heading and collect following content
+        let headingPattern = "(?i)##?\\s*\(escapedMarker)\\s*"
+        if let headingRange = content.range(of: headingPattern, options: .regularExpression) {
+            let afterHeading = String(content[headingRange.upperBound...])
+            let lines = afterHeading.components(separatedBy: .newlines)
+            var sectionLines: [String] = []
+            
+            for line in lines.prefix(30) {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                // Stop at next major heading
+                if trimmed.hasPrefix("##") { break }
+                if trimmed.hasPrefix("# ") && sectionLines.count > 0 { break }
+                
+                if !trimmed.isEmpty {
+                    sectionLines.append(trimmed)
+                    if sectionLines.joined(separator: " ").count > 2000 { break }
+                }
+            }
+            
+            let section = sectionLines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            if section.count >= 100 {
+                return section
+            }
+        }
+        
+        return nil
+    }
+    
+    // MARK: - Intelligent Context Building
+    
+    private func buildIntelligentContext(content: String, metadata: ContentMetadata?, contentType: ContentType, characteristics: ContentCharacteristics) -> String {
+        var context = "Content Analysis Task:\n"
+        
+        // Add content type context
+        context += "Type: \(contentType)\n"
+        context += "Characteristics: \(characteristics.wordCount) words, \(characteristics.complexity)\n"
+        
+        // Add metadata if available (highly informative)
+        if let metadata = metadata {
+            context += "\nMetadata:\n"
+            context += metadata.contextString()
+            context += "\n"
+        }
+        
+        // Add optimized content
+        context += "\nContent to analyze:\n"
+        
+        // For very long content, add a summary + first part
+        if content.count > 5000 {
+            let summary = generateQuickSummary(content: content, maxLength: 300)
+            let firstPart = String(content.prefix(3000))
+            context += "Summary: \(summary)\n\n"
+            context += "Full content (first 3000 chars):\n\(firstPart)\n..."
+        } else {
+            context += content
+        }
+        
+        return context
+    }
+    
+    private func generateQuickSummary(content: String, maxLength: Int) -> String {
+        // Fast heuristic summary for context
+        let paragraphs = content.components(separatedBy: "\n\n")
+        var summary = ""
+        
+        for paragraph in paragraphs.prefix(3) {
+            let trimmed = paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.count > 50 && summary.count + trimmed.count < maxLength {
+                summary += (summary.isEmpty ? "" : " ") + trimmed
+            }
+        }
+        
+        if summary.isEmpty {
+            return String(content.prefix(maxLength))
+        }
+        
+        return String(summary.prefix(maxLength))
+    }
+    
+    // MARK: - Adaptive Analysis
+    
+    private func performAdaptiveAnalysis(content: String, metadata: ContentMetadata?, contentType: ContentType, characteristics: ContentCharacteristics) -> NoteAnalysis {
+        // Use different strategies based on content type
+        switch contentType {
+        case .researchPaper:
+            return analyzeResearchPaper(content: content, metadata: metadata)
+        case .codeRepository:
+            return analyzeCodeRepository(content: content, metadata: metadata)
+        case .technicalDocumentation:
+            return analyzeTechnicalDoc(content: content, metadata: metadata)
+        case .articleBlog, .tutorial:
+            return analyzeArticle(content: content, metadata: metadata)
+        default:
+            return analyzeGeneral(content: content, metadata: metadata)
+        }
+    }
+    
+    private func analyzeResearchPaper(content: String, metadata: ContentMetadata?) -> NoteAnalysis {
+        let title = extractTitle(from: content, metadata: metadata)
+        let summary = extractAbstract(from: content) ?? generateEnhancedSummary(from: content, metadata: metadata)
+        let tags = extractTags(from: content, metadata: metadata) + ["research", "academic"]
+        let category = "Research Paper"
+        let whatIsIt = analyzeWhatItIs(from: content, metadata: metadata) ?? "A research paper presenting academic findings"
+        let whyAdvantageous = "Provides peer-reviewed insights and scientific findings. Useful for academic research and staying current with developments."
+        
+        return NoteAnalysis(
+            title: title,
+            summary: summary,
+            tags: Array(Set(tags)).prefix(8).map { $0 },
+            category: category,
+            whatIsIt: whatIsIt,
+            whyAdvantageous: whyAdvantageous
+        )
+    }
+    
+    private func analyzeCodeRepository(content: String, metadata: ContentMetadata?) -> NoteAnalysis {
+        let title = extractTitle(from: content, metadata: metadata)
+        let summary = extractReadmeSummary(from: content) ?? generateEnhancedSummary(from: content, metadata: metadata)
+        let tags = extractTags(from: content, metadata: metadata) + ["code", "development"]
+        let category = "Code Repository"
+        let whatIsIt = analyzeWhatItIs(from: content, metadata: metadata) ?? "A software project or code repository"
+        let whyAdvantageous = "Provides reusable code examples and implementation patterns. Useful for learning and reference in development projects."
+        
+        return NoteAnalysis(
+            title: title,
+            summary: summary,
+            tags: Array(Set(tags)).prefix(8).map { $0 },
+            category: category,
+            whatIsIt: whatIsIt,
+            whyAdvantageous: whyAdvantageous
+        )
+    }
+    
+    private func analyzeTechnicalDoc(content: String, metadata: ContentMetadata?) -> NoteAnalysis {
+        let title = extractTitle(from: content, metadata: metadata)
+        let summary = generateEnhancedSummary(from: content, metadata: metadata)
+        let tags = extractTags(from: content, metadata: metadata) + ["documentation", "technical"]
+        let category = "Documentation"
+        let whatIsIt = "Technical documentation providing specifications, APIs, or reference materials"
+        let whyAdvantageous = "Authoritative technical reference. Essential for understanding systems and implementing solutions correctly."
+        
+        return NoteAnalysis(
+            title: title,
+            summary: summary,
+            tags: Array(Set(tags)).prefix(8).map { $0 },
+            category: category,
+            whatIsIt: whatIsIt,
+            whyAdvantageous: whyAdvantageous
+        )
+    }
+    
+    private func analyzeArticle(content: String, metadata: ContentMetadata?) -> NoteAnalysis {
         let title = extractTitle(from: content, metadata: metadata)
         let summary = generateEnhancedSummary(from: content, metadata: metadata)
         let tags = extractTags(from: content, metadata: metadata)
-        let category = extractCategory(from: content, metadata: metadata)
+        let category = extractCategory(from: content, metadata: metadata) ?? "Article"
         let whatIsIt = analyzeWhatItIs(from: content, metadata: metadata)
         let whyAdvantageous = analyzeWhyAdvantageous(from: content, category: category, metadata: metadata)
         
@@ -40,17 +455,22 @@ class MLCLLMService: LLMService {
         )
     }
     
-    private func buildEnrichedContext(content: String, metadata: ContentMetadata?) -> String {
-        var context = ""
+    private func analyzeGeneral(content: String, metadata: ContentMetadata?) -> NoteAnalysis {
+        let title = extractTitle(from: content, metadata: metadata)
+        let summary = generateEnhancedSummary(from: content, metadata: metadata)
+        let tags = extractTags(from: content, metadata: metadata)
+        let category = extractCategory(from: content, metadata: metadata) ?? "General"
+        let whatIsIt = analyzeWhatItIs(from: content, metadata: metadata)
+        let whyAdvantageous = analyzeWhyAdvantageous(from: content, category: category, metadata: metadata)
         
-        if let metadata = metadata {
-            context += metadata.contextString()
-            context += "\n\n"
-        }
-        
-        context += "Content:\n\(content)"
-        
-        return context
+        return NoteAnalysis(
+            title: title,
+            summary: summary,
+            tags: tags,
+            category: category,
+            whatIsIt: whatIsIt,
+            whyAdvantageous: whyAdvantageous
+        )
     }
     
     func generateSummary(content: String) async throws -> String {
@@ -58,8 +478,16 @@ class MLCLLMService: LLMService {
             throw LLMError(message: "Model not loaded")
         }
         
-        // TODO: Implement actual summary generation
-        return String(content.prefix(200))
+        // Use intelligent summary generation
+        let contentType = detectContentType(content: content, metadata: nil)
+        let characteristics = analyzeContentCharacteristics(content: content, metadata: nil)
+        let optimizedContent = prepareOptimizedContent(
+            content: content,
+            contentType: contentType,
+            characteristics: characteristics
+        )
+        
+        return generateEnhancedSummary(from: optimizedContent, metadata: nil)
     }
     
     func suggestTags(content: String) async throws -> [String] {
@@ -67,8 +495,34 @@ class MLCLLMService: LLMService {
             throw LLMError(message: "Model not loaded")
         }
         
-        // TODO: Implement actual tag suggestion
-        return extractTags(from: content, metadata: nil)
+        // Use intelligent tag extraction with content type awareness
+        let contentType = detectContentType(content: content, metadata: nil)
+        let tags = extractTags(from: content, metadata: nil)
+        
+        // Add content-type specific tags
+        var enhancedTags = tags
+        switch contentType {
+        case .researchPaper:
+            enhancedTags.append("research")
+            enhancedTags.append("academic")
+        case .codeRepository:
+            enhancedTags.append("code")
+            enhancedTags.append("development")
+        case .technicalDocumentation:
+            enhancedTags.append("documentation")
+            enhancedTags.append("technical")
+        case .articleBlog:
+            enhancedTags.append("article")
+        case .tutorial:
+            enhancedTags.append("tutorial")
+            enhancedTags.append("guide")
+        case .news:
+            enhancedTags.append("news")
+        default:
+            break
+        }
+        
+        return Array(Set(enhancedTags)).prefix(8).map { $0 }
     }
     
     func generateTitle(content: String) async throws -> String {
@@ -76,7 +530,7 @@ class MLCLLMService: LLMService {
             throw LLMError(message: "Model not loaded")
         }
         
-        // TODO: Implement actual title generation
+        // Use intelligent title extraction
         return extractTitle(from: content, metadata: nil)
     }
     
@@ -97,23 +551,365 @@ class MLCLLMService: LLMService {
     }
     
     private func generateEnhancedSummary(from content: String, metadata: ContentMetadata?) -> String {
-        // Prefer metadata descriptions (most accurate)
+        // Step 1: Prefer metadata descriptions (most accurate and concise)
         if let ogDesc = metadata?.openGraphDescription, !ogDesc.isEmpty {
-            return String(ogDesc.prefix(300))
+            return cleanAndTruncateSummary(ogDesc, maxLength: 280)
         }
         if let metaDesc = metadata?.metaDescription, !metaDesc.isEmpty {
-            return String(metaDesc.prefix(300))
+            return cleanAndTruncateSummary(metaDesc, maxLength: 280)
         }
         
-        // Extract first meaningful paragraph from content
-        let paragraphs = content.components(separatedBy: "\n\n")
-        for paragraph in paragraphs {
-            let trimmed = paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.count > 50 && !trimmed.hasPrefix("#") {
-                return String(trimmed.prefix(300))
+        // Step 2: Clean and preprocess content for better extraction
+        let cleanedContent = preprocessContentForSummary(content)
+        
+        // Step 3: Intelligent summary extraction based on content type
+        if let summary = extractSummaryByContentType(cleanedContent, metadata: metadata) {
+            return summary
+        }
+        
+        // Step 4: Extract meaningful sentences from first paragraphs
+        if let summary = extractKeySentences(from: cleanedContent) {
+            return summary
+        }
+        
+        // Step 5: Fallback - smart truncation with context
+        return smartTruncate(content: cleanedContent, maxLength: 280)
+    }
+    
+    // MARK: - Content Preprocessing
+    
+    private func preprocessContentForSummary(_ content: String) -> String {
+        var cleaned = content
+        
+        // Remove common noise patterns
+        let noisePatterns = [
+            "Skip to content",
+            "Skip to main content",
+            "Menu",
+            "Navigation",
+            "Cookie consent",
+            "Accept cookies",
+            "Subscribe",
+            "Newsletter",
+            "Advertisement",
+            "Ad:",
+            "Related articles",
+            "Share this"
+        ]
+        
+        for pattern in noisePatterns {
+            cleaned = cleaned.replacingOccurrences(of: pattern, with: "", options: .caseInsensitive)
+        }
+        
+        // Remove excessive whitespace
+        cleaned = cleaned.replacingOccurrences(
+            of: "\\s{3,}",
+            with: " ",
+            options: .regularExpression
+        )
+        
+        // Remove markdown code blocks that might be noise
+        cleaned = cleaned.replacingOccurrences(
+            of: "```[^`]*```",
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    // MARK: - Content Type-Specific Extraction
+    
+    private func extractSummaryByContentType(_ content: String, metadata: ContentMetadata?) -> String? {
+        let lowercased = content.lowercased()
+        
+        // Research papers
+        if content.contains("Abstract:") || content.contains("ABSTRACT") || 
+           content.range(of: #"\babstract\b"#, options: .regularExpression) != nil {
+            if let abstract = extractAbstract(from: content) {
+                return cleanAndTruncateSummary(abstract, maxLength: 280)
             }
         }
-        return String(content.prefix(250))
+        
+        // GitHub README files
+        if metadata?.domain?.contains("github") == true || lowercased.contains("readme") {
+            if let readmeSummary = extractReadmeSummary(from: content) {
+                return cleanAndTruncateSummary(readmeSummary, maxLength: 280)
+            }
+        }
+        
+        // Articles with explicit introduction or summary sections
+        if let introSummary = extractIntroductionOrSummary(from: content) {
+            return cleanAndTruncateSummary(introSummary, maxLength: 280)
+        }
+        
+        return nil
+    }
+    
+    private func extractAbstract(from content: String) -> String? {
+        // Look for "Abstract:" or "ABSTRACT" header
+        let abstractMarkers = [
+            #"(?i)\babstract\s*:?\s*\n"#,
+            #"(?i)^\s*abstract\s*:?\s*\n"#,
+            #"ABSTRACT\s*:?\s*\n"#
+        ]
+        
+        for marker in abstractMarkers {
+            if let markerRange = content.range(of: marker, options: .regularExpression) {
+                let afterAbstract = String(content[markerRange.upperBound...])
+                let lines = afterAbstract.components(separatedBy: .newlines)
+                var abstractLines: [String] = []
+                
+                // Collect lines until we hit a section break
+                for line in lines.prefix(15) {
+                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    
+                    // Stop at section headers
+                    if trimmed.hasPrefix("#") { break }
+                    if trimmed.lowercased().hasPrefix("introduction") { break }
+                    if trimmed.lowercased().hasPrefix("keywords") { break }
+                    if trimmed.lowercased().hasPrefix("1.") && trimmed.count < 50 { break }
+                    if trimmed.isEmpty && abstractLines.count >= 3 { break }
+                    
+                    if !trimmed.isEmpty {
+                        abstractLines.append(trimmed)
+                        
+                        // Stop if we have enough content
+                        let currentAbstract = abstractLines.joined(separator: " ")
+                        if currentAbstract.count > 500 {
+                            break
+                        }
+                    }
+                }
+                
+                let abstract = abstractLines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+                if abstract.count >= 50 && abstract.count <= 500 {
+                    return abstract
+                }
+            }
+        }
+        
+        // Alternative: Look for abstract in first paragraph that mentions "abstract"
+        let paragraphs = content.components(separatedBy: "\n\n")
+        for paragraph in paragraphs.prefix(5) {
+            let lowercased = paragraph.lowercased()
+            if lowercased.contains("abstract") && paragraph.count >= 50 && paragraph.count <= 800 {
+                // Extract content after "Abstract:" marker
+                if let abstractPos = lowercased.range(of: "abstract") {
+                    let afterAbstract = String(paragraph[abstractPos.upperBound...])
+                    let cleaned = afterAbstract
+                        .replacingOccurrences(of: #"^[:\s]+"#, with: "", options: .regularExpression)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    
+                    if cleaned.count >= 50 && cleaned.count <= 500 {
+                        return cleaned
+                    }
+                }
+            }
+        }
+        
+        return nil
+    }
+    
+    private func extractReadmeSummary(from content: String) -> String? {
+        // Look for description section in README
+        let sectionPattern = #"##\s*(?:Description|About|Overview|Summary)[^\n]*\n+([^#]{30,400})"#
+        
+        if let range = content.range(of: sectionPattern, options: .regularExpression) {
+            let sectionContent = String(content[range])
+            // Extract content after the header
+            if let headerEnd = sectionContent.range(of: "\n") {
+                let summary = String(sectionContent[headerEnd.upperBound...])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                
+                if summary.count >= 30 && summary.count <= 400 {
+                    return summary
+                }
+            }
+        }
+        
+        // Fallback: Look for inline description/about/overview
+        let inlinePattern = #"(?i)(?:description|about|overview)[:\s]+\s*([^\n]{30,400})"#
+        if let range = content.range(of: inlinePattern, options: .regularExpression) {
+            let match = String(content[range])
+            if let colonRange = match.range(of: ":") {
+                let summary = String(match[colonRange.upperBound...])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                
+                if summary.count >= 30 && summary.count <= 400 {
+                    return summary
+                }
+            }
+        }
+        
+        // Fallback: Use first paragraph if it looks like a description
+        let paragraphs = content.components(separatedBy: "\n\n")
+        for paragraph in paragraphs.prefix(3) {
+            let trimmed = paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.count >= 30 && trimmed.count <= 400 &&
+               !trimmed.hasPrefix("#") && !trimmed.hasPrefix("```") {
+                return trimmed
+            }
+        }
+        
+        return nil
+    }
+    
+    private func extractIntroductionOrSummary(from content: String) -> String? {
+        // Look for explicit summary/introduction sections with headers
+        let headerPattern = #"##\s*(?:Summary|Introduction|Overview|TL;DR|TLDR|Executive Summary)[^\n]*\n+([^#]{30,400})"#
+        
+        if let range = content.range(of: headerPattern, options: .regularExpression) {
+            let sectionContent = String(content[range])
+            if let headerEnd = sectionContent.range(of: "\n") {
+                let summary = String(sectionContent[headerEnd.upperBound...])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                
+                if summary.count >= 30 && summary.count <= 400 {
+                    return summary
+                }
+            }
+        }
+        
+        // Look for inline summary/introduction
+        let inlinePattern = #"(?i)(?:summary|introduction|overview|tl;dr|tldr)[:\s]+\s*([^\n]{30,400})"#
+        if let range = content.range(of: inlinePattern, options: .regularExpression) {
+            let match = String(content[range])
+            var colonRange: Range<String.Index>?
+            if let colon = match.range(of: ":") {
+                colonRange = colon
+            } else if let space = match.range(of: #"\s+"#, options: .regularExpression) {
+                colonRange = space
+            }
+            
+            if let colonRange = colonRange {
+                let summary = String(match[colonRange.upperBound...])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                
+                if summary.count >= 30 && summary.count <= 400 {
+                    return summary
+                }
+            }
+        }
+        
+        return nil
+    }
+    
+    // MARK: - Key Sentence Extraction
+    
+    private func extractKeySentences(from content: String) -> String? {
+        let paragraphs = content.components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { paragraph in
+                // Filter out non-content paragraphs
+                paragraph.count >= 30 &&
+                !paragraph.hasPrefix("#") &&
+                !paragraph.hasPrefix("```") &&
+                !paragraph.lowercased().contains("cookie") &&
+                !paragraph.lowercased().contains("subscribe")
+            }
+        
+        guard !paragraphs.isEmpty else { return nil }
+        
+        // Strategy 1: Use first substantial paragraph
+        if let firstParagraph = paragraphs.first(where: { $0.count >= 50 && $0.count <= 500 }) {
+            return extractBestSentences(from: firstParagraph, maxLength: 280)
+        }
+        
+        // Strategy 2: Combine first 2-3 short paragraphs
+        let shortParagraphs = paragraphs.prefix(3).filter { $0.count >= 30 && $0.count <= 200 }
+        if shortParagraphs.count >= 2 {
+            let combined = shortParagraphs.joined(separator: " ")
+            return cleanAndTruncateSummary(combined, maxLength: 280)
+        }
+        
+        // Strategy 3: Extract key sentences from first long paragraph
+        if let firstParagraph = paragraphs.first, firstParagraph.count > 500 {
+            return extractBestSentences(from: firstParagraph, maxLength: 280)
+        }
+        
+        return nil
+    }
+    
+    private func extractBestSentences(from paragraph: String, maxLength: Int) -> String {
+        let sentences = paragraph.components(separatedBy: CharacterSet(charactersIn: ".!?"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { sentence in
+                sentence.count >= 20 && sentence.count <= 200
+            }
+        
+        guard !sentences.isEmpty else {
+            return smartTruncate(content: paragraph, maxLength: maxLength)
+        }
+        
+        // Prefer first 2-3 sentences that are meaningful
+        var selectedSentences: [String] = []
+        var totalLength = 0
+        
+        for sentence in sentences.prefix(5) {
+            if totalLength + sentence.count + 2 <= maxLength {
+                selectedSentences.append(sentence)
+                totalLength += sentence.count + 2
+            } else {
+                break
+            }
+        }
+        
+        if !selectedSentences.isEmpty {
+            return selectedSentences.joined(separator: ". ") + (selectedSentences.count == sentences.count ? "" : "...")
+        }
+        
+        return smartTruncate(content: paragraph, maxLength: maxLength)
+    }
+    
+    // MARK: - Summary Utilities
+    
+    private func cleanAndTruncateSummary(_ text: String, maxLength: Int) -> String {
+        let cleaned = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        
+        if cleaned.count <= maxLength {
+            return cleaned
+        }
+        
+        // Try to truncate at sentence boundary
+        let truncated = String(cleaned.prefix(maxLength))
+        if let lastPeriod = truncated.lastIndex(of: ".") {
+            let lastSentenceEnd = truncated.index(after: lastPeriod)
+            if truncated.distance(from: truncated.startIndex, to: lastSentenceEnd) >= maxLength * 3 / 4 {
+                return String(truncated[..<lastSentenceEnd])
+            }
+        }
+        
+        // Fallback to word boundary
+        if let lastSpace = truncated.lastIndex(of: " ") {
+            return String(truncated[..<lastSpace]) + "..."
+        }
+        
+        return truncated + "..."
+    }
+    
+    private func smartTruncate(content: String, maxLength: Int) -> String {
+        let cleaned = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if cleaned.count <= maxLength {
+            return cleaned
+        }
+        
+        let truncated = String(cleaned.prefix(maxLength))
+        
+        // Try to end at sentence boundary
+        if let lastPeriod = truncated.lastIndex(of: ".") {
+            return String(truncated[..<truncated.index(after: lastPeriod)])
+        }
+        
+        // Try word boundary
+        if let lastSpace = truncated.lastIndex(of: " ") {
+            return String(truncated[..<lastSpace]) + "..."
+        }
+        
+        return truncated + "..."
     }
     
     private func extractTags(from content: String, metadata: ContentMetadata?) -> [String] {
