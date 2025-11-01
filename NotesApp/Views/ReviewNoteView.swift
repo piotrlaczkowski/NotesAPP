@@ -122,12 +122,8 @@ struct ReviewNoteView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
                         Task {
-                            // Update analysis with edited values before approving
-                            var updatedAnalysis = analysis
-                            // Note: NoteAnalysis is a struct with let properties, so we can't modify it
-                            // Instead, we just save the note (the analysis is already stored separately)
-                            // The edited values are for display/review only
-                            
+                            // The edited analysis values are already stored in appState.pendingNoteAnalysis
+                            // via the onChange handlers, so we just need to save the note
                             await viewModel.approve(note: note)
                             if viewModel.errorMessage == nil {
                                 #if os(iOS)

@@ -30,23 +30,23 @@ struct NotesApp: App {
     private func handleURLScheme(url: URL) async {
         print("NotesApp: Received URL scheme: \(url.absoluteString)")
         
-        // Handle both "open" and "process" URLs
+        // Handle "open" URL - this just wakes up the app
+        // The actual URL to process is stored in App Group
         if url.host == "open" || url.host == "process" {
+            // Check for query parameter first (legacy support)
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
             if let urlQuery = components?.queryItems?.first(where: { $0.name == "url" }),
                let urlString = urlQuery.value,
                let targetURL = URL(string: urlString) {
-                print("NotesApp: Processing URL from scheme: \(targetURL.absoluteString)")
-                // Process the URL using AppState immediately
-                // This will show the ReviewNoteView sheet automatically
+                print("NotesApp: Processing URL from scheme query: \(targetURL.absoluteString)")
                 await appState.processURLFromShareExtension(url: targetURL)
-                print("NotesApp: URL processing completed, review view should be shown")
                 return
             }
         }
         
-        // Fallback: check App Group for pending URL
-        print("NotesApp: Falling back to checking App Group for pending URL")
+        // Primary mechanism: check App Group for pending URL
+        // This is more reliable than URL scheme parameters
+        print("NotesApp: Checking App Group for pending URL")
         await appState.processPendingNote()
     }
 }
