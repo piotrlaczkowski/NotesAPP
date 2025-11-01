@@ -29,6 +29,7 @@ actor ModelDownloader {
     private let fileManager = FileManager.default
     private let modelsDirectory: URL
     private let session: URLSession
+    private var activeDownloads: [String: URLSessionDownloadTask] = [:]
     
     private init() {
         let paths = fileManager.urls(for: .documentDirectory, in: .userDomainMask)
@@ -66,10 +67,28 @@ actor ModelDownloader {
         
         let destinationURL = modelsDirectory.appendingPathComponent(config.localPath)
         
-        // Check if already downloaded
+        // Check if already downloaded (with file size verification)
         if fileManager.fileExists(atPath: destinationURL.path) {
-            progress(1.0)
-            return
+            // Verify file is not empty (might be corrupted/incomplete)
+            if let attributes = try? fileManager.attributesOfItem(atPath: destinationURL.path),
+               let fileSize = attributes[.size] as? Int64,
+               fileSize > 0 {
+                print("ModelDownloader: Model \(model) already downloaded (\(fileSize) bytes)")
+                await MainActor.run {
+                    progress(1.0)
+                }
+                return
+            } else {
+                // File exists but might be corrupted, remove it
+                print("ModelDownloader: Existing file for \(model) appears corrupted, removing...")
+                try? fileManager.removeItem(at: destinationURL)
+            }
+        }
+        
+        // Prevent concurrent downloads of the same model
+        if activeDownloads[model] != nil {
+            print("ModelDownloader: Download already in progress for \(model), skipping")
+            throw ModelDownloadError.networkError("Download already in progress for this model")
         }
         
         // First, try to discover the actual GGUF file name using Hugging Face API
@@ -114,16 +133,34 @@ actor ModelDownloader {
             }
             
             do {
+                // Calculate base progress for this URL attempt (so progress doesn't restart)
+                let baseProgress = Double(index) / Double(allURLs.count)
+                
                 // Use async download with progress tracking
-                // Create a custom session with delegate for progress
-                let delegate = ProgressDownloadDelegate(progressCallback: progress)
+                let delegate = ProgressDownloadDelegate(progressCallback: { currentProgress in
+                    // Adjust progress to account for URL attempt index
+                    // Each URL attempt contributes 1/allURLs.count to total progress
+                    let adjustedProgress = baseProgress + (currentProgress / Double(allURLs.count))
+                    let clampedProgress = min(adjustedProgress, 1.0)
+                    Task { @MainActor in
+                        progress(clampedProgress)
+                    }
+                })
                 let progressSession = URLSession(configuration: session.configuration, delegate: delegate, delegateQueue: nil)
                 
-                // Start download and wait for completion with progress tracking
+                // Create and store download task to track active downloads
+                let downloadTask = progressSession.downloadTask(with: request)
+                activeDownloads[model] = downloadTask
+                downloadTask.resume()
+                
+                // Wait for completion
                 let (localURL, response) = try await delegate.download(using: progressSession, with: request)
                 
-                // Clean up
-                progressSession.invalidateAndCancel()
+                // Clear active download
+                activeDownloads.removeValue(forKey: model)
+                
+                // Clean up session after completion
+                progressSession.finishTasksAndInvalidate()
                 
                 // Validate HTTP response
                 if let httpResponse = response as? HTTPURLResponse {
@@ -148,36 +185,49 @@ actor ModelDownloader {
                         try fileManager.removeItem(at: destinationURL)
                     }
                     try fileManager.moveItem(at: localURL, to: destinationURL)
-                    progress(1.0)
+                    await MainActor.run {
+                        progress(1.0)
+                    }
+                    activeDownloads.removeValue(forKey: model)
                     return // Success!
                 } catch {
+                    activeDownloads.removeValue(forKey: model)
                     throw ModelDownloadError.fileSystemError(error)
                 }
             } catch let error as ModelDownloadError {
                 print("ModelDownloader: Error (ModelDownloadError): \(error.localizedDescription)")
                 lastError = error
+                activeDownloads.removeValue(forKey: model)
                 // If this is the last URL, throw the error
                 if index >= allURLs.count - 1 {
-                    progress(0.0)
+                    await MainActor.run {
+                        progress(0.0)
+                    }
                     throw error
                 }
-                // Otherwise, continue to next URL
+                // Otherwise, continue to next URL (progress maintained at current level)
                 continue
             } catch {
                 print("ModelDownloader: Error (general): \(error.localizedDescription)")
                 lastError = error
+                activeDownloads.removeValue(forKey: model)
                 // If this is the last URL, throw the error
                 if index >= allURLs.count - 1 {
-                    progress(0.0)
+                    await MainActor.run {
+                        progress(0.0)
+                    }
                     throw ModelDownloadError.downloadFailed(error)
                 }
-                // Otherwise, continue to next URL
+                // Otherwise, continue to next URL (progress maintained)
                 continue
             }
         }
         
         // If we get here, all URLs failed
-        progress(0.0)
+        activeDownloads.removeValue(forKey: model)
+        await MainActor.run {
+            progress(0.0)
+        }
         throw lastError ?? ModelDownloadError.networkError("All download URLs failed. The model may not be available or the repository structure has changed.")
     }
     
@@ -397,11 +447,11 @@ class ProgressDownloadDelegate: NSObject, URLSessionDownloadDelegate {
     }
     
     func download(using session: URLSession, with request: URLRequest) async throws -> (URL, URLResponse) {
+        // This method is called after task.resume() is already called
+        // So we just need to wait for the completion
         return try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
-            let task = session.downloadTask(with: request)
-            task.resume()
-            // Session keeps task alive, no need to store reference
+            // Task is already resumed in the caller
         }
     }
     

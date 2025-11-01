@@ -314,18 +314,25 @@ class SettingsViewModel: ObservableObject {
     }
     
     func downloadModel(_ model: String) async {
+        // Prevent concurrent downloads
+        guard !isDownloading else {
+            print("SettingsViewModel: Download already in progress")
+            return
+        }
+        
         isDownloading = true
         downloadProgress = 0.0
         errorMessage = nil
         showError = false
         
-        defer { isDownloading = false }
+        defer { 
+            isDownloading = false
+        }
         
         do {
             try await modelDownloader.download(model: model) { progress in
-                Task { @MainActor in
-                    self.downloadProgress = progress
-                }
+                // Progress callback is already on MainActor from ModelDownloader
+                self.downloadProgress = progress
             }
             
             await loadModelStatus()
