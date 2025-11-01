@@ -65,14 +65,18 @@ actor ModelDownloader {
             throw ModelDownloadError.invalidModel
         }
         
+        // Determine destination - use standard localPath (e.g., "LFM2-1.2B.gguf")
         let destinationURL = modelsDirectory.appendingPathComponent(config.localPath)
+        
+        print("ModelDownloader: Destination path: \(destinationURL.path)")
+        print("ModelDownloader: Models directory: \(modelsDirectory.path)")
         
         // Check if already downloaded (with file size verification)
         if fileManager.fileExists(atPath: destinationURL.path) {
             // Verify file is not empty (might be corrupted/incomplete)
             if let attributes = try? fileManager.attributesOfItem(atPath: destinationURL.path),
                let fileSize = attributes[.size] as? Int64,
-               fileSize > 0 {
+               fileSize > 1000 { // At least 1KB (models are large)
                 print("ModelDownloader: Model \(model) already downloaded (\(fileSize) bytes)")
                 await MainActor.run {
                     progress(1.0)
@@ -80,7 +84,7 @@ actor ModelDownloader {
                 return
             } else {
                 // File exists but might be corrupted, remove it
-                print("ModelDownloader: Existing file for \(model) appears corrupted, removing...")
+                print("ModelDownloader: Existing file for \(model) appears corrupted or too small, removing...")
                 try? fileManager.removeItem(at: destinationURL)
             }
         }
@@ -153,14 +157,14 @@ actor ModelDownloader {
                 activeDownloads[model] = downloadTask
                 downloadTask.resume()
                 
-                // Wait for completion
+                // Wait for completion - CRITICAL: Do this synchronously to prevent temp file cleanup
                 let (localURL, response) = try await delegate.download(using: progressSession, with: request)
                 
                 // Clear active download
                 activeDownloads.removeValue(forKey: model)
                 
-                // Clean up session after completion
-                progressSession.finishTasksAndInvalidate()
+                // Process the file IMMEDIATELY before URLSession cleans it up
+                // Don't invalidate session yet - wait until after file is copied
                 
                 // Validate HTTP response
                 if let httpResponse = response as? HTTPURLResponse {
@@ -180,17 +184,121 @@ actor ModelDownloader {
                 
                 // Move to destination
                 do {
+                    // CRITICAL: Ensure Models directory exists (recreate if needed on iOS)
+                    if !fileManager.fileExists(atPath: modelsDirectory.path) {
+                        print("ModelDownloader: ⚠️ Models directory doesn't exist, creating...")
+                        try fileManager.createDirectory(at: modelsDirectory, withIntermediateDirectories: true, attributes: nil)
+                        print("ModelDownloader: ✓ Models directory created at \(modelsDirectory.path)")
+                    }
+                    
+                    // Verify directory was actually created
+                    guard fileManager.fileExists(atPath: modelsDirectory.path) else {
+                        let error = NSError(domain: "ModelDownloader", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create Models directory at \(modelsDirectory.path)"])
+                        activeDownloads.removeValue(forKey: model)
+                        throw ModelDownloadError.fileSystemError(error)
+                    }
+                    
+                    // Verify temp file exists and is readable
+                    guard fileManager.fileExists(atPath: localURL.path) else {
+                        let error = NSError(domain: "ModelDownloader", code: -1, userInfo: [NSLocalizedDescriptionKey: "Downloaded file not found at \(localURL.path)"])
+                        activeDownloads.removeValue(forKey: model)
+                        throw ModelDownloadError.fileSystemError(error)
+                    }
+                    
+                    // Check file size to ensure download completed (must be substantial)
+                    var downloadedSize: Int64 = 0
+                    if let attributes = try? fileManager.attributesOfItem(atPath: localURL.path),
+                       let fileSize = attributes[.size] as? Int64 {
+                        downloadedSize = fileSize
+                        print("ModelDownloader: Downloaded file size: \(fileSize) bytes (\(Double(fileSize) / 1_000_000.0) MB)")
+                        if fileSize < 1000 {
+                            let error = NSError(domain: "ModelDownloader", code: -1, userInfo: [NSLocalizedDescriptionKey: "Downloaded file is too small (\(fileSize) bytes), download may have failed"])
+                            activeDownloads.removeValue(forKey: model)
+                            throw ModelDownloadError.fileSystemError(error)
+                        }
+                    }
+                    
                     // Remove existing file if present
                     if fileManager.fileExists(atPath: destinationURL.path) {
+                        print("ModelDownloader: Removing existing file at \(destinationURL.path)")
                         try fileManager.removeItem(at: destinationURL)
                     }
-                    try fileManager.moveItem(at: localURL, to: destinationURL)
+                    
+                    // For simple filenames (no subdirectories), parent is Models directory (already exists)
+                    // But ensure it's writable
+                    var isDirectory: ObjCBool = false
+                    guard fileManager.fileExists(atPath: modelsDirectory.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                        let error = NSError(domain: "ModelDownloader", code: -1, userInfo: [NSLocalizedDescriptionKey: "Models directory is not a directory or doesn't exist: \(modelsDirectory.path)"])
+                        activeDownloads.removeValue(forKey: model)
+                        throw ModelDownloadError.fileSystemError(error)
+                    }
+                    
+                    // Direct copy approach - simpler and more reliable
+                    // The localURL from URLSession is already in a temp location
+                    print("ModelDownloader: Source temp file: \(localURL.path)")
+                    print("ModelDownloader: Destination: \(destinationURL.path)")
+                    
+                    // Verify source file is accessible
+                    guard fileManager.isReadableFile(atPath: localURL.path) else {
+                        let error = NSError(domain: "ModelDownloader", code: -1, userInfo: [NSLocalizedDescriptionKey: "Source file is not readable: \(localURL.path)"])
+                        activeDownloads.removeValue(forKey: model)
+                        throw ModelDownloadError.fileSystemError(error)
+                    }
+                    
+                    // Copy directly to destination (URLSession handles temp file cleanup)
+                    print("ModelDownloader: Copying directly to destination...")
+                    try fileManager.copyItem(at: localURL, to: destinationURL)
+                    
+                    // Verify copy succeeded
+                    guard fileManager.fileExists(atPath: destinationURL.path) else {
+                        let error = NSError(domain: "ModelDownloader", code: -1, userInfo: [NSLocalizedDescriptionKey: "File copy failed - destination file not found"])
+                        activeDownloads.removeValue(forKey: model)
+                        throw ModelDownloadError.fileSystemError(error)
+                    }
+                    
+                    // Verify file size matches (with tolerance for compression differences)
+                    if let finalAttributes = try? fileManager.attributesOfItem(atPath: destinationURL.path),
+                       let finalSize = finalAttributes[.size] as? Int64 {
+                        print("ModelDownloader: ✓ Final file size: \(finalSize) bytes (\(Double(finalSize) / 1_000_000.0) MB)")
+                        if downloadedSize > 0 && abs(finalSize - downloadedSize) > 1000 {
+                            print("ModelDownloader: ⚠️ Warning: File size difference (downloaded: \(downloadedSize), final: \(finalSize), diff: \(abs(finalSize - downloadedSize)))")
+                        }
+                    }
+                    
+                    // Clean up source temp file (URLSession temporary file)
+                    // Use try? since it might already be cleaned up by URLSession
+                    do {
+                        try fileManager.removeItem(at: localURL)
+                        print("ModelDownloader: ✓ Cleaned up temp download file")
+                    } catch {
+                        print("ModelDownloader: Note: Could not remove temp file (may be auto-cleaned): \(error.localizedDescription)")
+                    }
+                    
+                    print("ModelDownloader: ✓✓✓ Successfully saved model to \(destinationURL.path)")
+                    print("ModelDownloader: File exists check: \(fileManager.fileExists(atPath: destinationURL.path))")
+                    
+                    // NOW we can invalidate the session (file is safely copied)
+                    progressSession.finishTasksAndInvalidate()
+                    
                     await MainActor.run {
                         progress(1.0)
                     }
                     activeDownloads.removeValue(forKey: model)
                     return // Success!
+                } catch let fsError as NSError {
+                    print("ModelDownloader: ❌ File system error details:")
+                    print("  Error domain: \(fsError.domain)")
+                    print("  Error code: \(fsError.code)")
+                    print("  Error description: \(fsError.localizedDescription)")
+                    print("  Source path: \(localURL.path)")
+                    print("  Source exists: \(fileManager.fileExists(atPath: localURL.path))")
+                    print("  Destination path: \(destinationURL.path)")
+                    print("  Models dir exists: \(fileManager.fileExists(atPath: modelsDirectory.path))")
+                    print("  Models dir is directory: \(fileManager.fileExists(atPath: modelsDirectory.path))")
+                    activeDownloads.removeValue(forKey: model)
+                    throw ModelDownloadError.fileSystemError(fsError)
                 } catch {
+                    print("ModelDownloader: ❌ Unexpected error: \(error)")
                     activeDownloads.removeValue(forKey: model)
                     throw ModelDownloadError.fileSystemError(error)
                 }
@@ -470,8 +578,23 @@ class ProgressDownloadDelegate: NSObject, URLSessionDownloadDelegate {
     }
     
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        // IMPORTANT: The location URL is a temporary file that will be deleted when this method returns
+        // We need to copy it to a permanent location before resuming the continuation
         let response = downloadTask.response ?? URLResponse()
-        continuation?.resume(returning: (location, response))
+        
+        // Copy to a more permanent temp location immediately
+        let tempDir = FileManager.default.temporaryDirectory
+        let permanentTempURL = tempDir.appendingPathComponent(UUID().uuidString).appendingPathExtension("gguf")
+        
+        do {
+            // Copy immediately while we still have access to the temp file
+            try FileManager.default.copyItem(at: location, to: permanentTempURL)
+            continuation?.resume(returning: (permanentTempURL, response))
+        } catch {
+            // If copy fails, still return the original location but log warning
+            print("ModelDownloader: Warning - could not copy temp file, using original location: \(error)")
+            continuation?.resume(returning: (location, response))
+        }
         continuation = nil
     }
     

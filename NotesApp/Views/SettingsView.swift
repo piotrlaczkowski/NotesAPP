@@ -335,18 +335,34 @@ class SettingsViewModel: ObservableObject {
                 self.downloadProgress = progress
             }
             
-            await loadModelStatus()
-            
-            // Auto-load after successful download
+            // Verify download succeeded
             let isDownloaded = await modelDownloader.isModelDownloaded(model)
+            print("SettingsViewModel: After download, isModelDownloaded=\(isDownloaded)")
+            
             if isDownloaded {
+                // Update UI status first
+                await loadModelStatus()
+                
+                // Auto-load after successful download
                 await llmManager.loadModel(model)
+                
+                // Refresh status again after loading
                 await loadModelStatus()
                 
                 // Show success feedback
                 #if os(iOS)
                 HapticFeedback.success()
                 #endif
+            } else {
+                // Model not detected - log details for debugging
+                print("SettingsViewModel: ⚠️ Model download completed but file not detected")
+                if let modelPath = await modelDownloader.getModelPath(for: model) {
+                    print("SettingsViewModel: But getModelPath returned: \(modelPath.path)")
+                } else {
+                    print("SettingsViewModel: getModelPath returned nil")
+                }
+                // Still update status to show download completed
+                await loadModelStatus()
             }
         } catch {
             let errorDescription = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
