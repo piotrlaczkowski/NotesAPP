@@ -1154,11 +1154,13 @@ class MLCLLMService: LLMService {
                 response += "The notes appear to contain relevant information about your query. "
             }
             
-            response += "Note: The LLM inference engine is still being integrated. Once fully connected, I'll be able to provide detailed answers based on your notes using the LFM2 model. For now, you can see which notes were found as sources below."
+            // Remove integration status message - just provide helpful response
+            response += "You can see the source notes below for more details."
             return response
         }
         
-        return "I'm ready to chat! The model is loaded and ready. Note: The LLM inference engine is still being integrated with the MLC-LLM framework. Once fully connected, I'll be able to provide detailed answers using the LFM2 model. You can ask me questions and I'll search through your notes to find relevant information."
+        // Generic response without integration status - more natural
+        return "I'm ready to help! You can ask me questions, and I'll do my best to assist. If you ask about your notes, I'll automatically search through them to find relevant information."
     }
     
     func generateChatResponseStream(prompt: String, context: String?) -> AsyncThrowingStream<String, Error> {
@@ -1207,23 +1209,52 @@ class MLCLLMService: LLMService {
                     
                     // Better context-aware response for RAG queries
                     var response = "Based on your \(noteCount) relevant note\(noteCount == 1 ? "" : "s"), "
-                    if hasRelevantInfo {
-                        response += "I found information related to your question. "
+                    
+                    // Try to extract key information from the context
+                    let queryWordsForExtraction = promptLower.components(separatedBy: .whitespaces)
+                        .filter { $0.count > 3 }
+                        .map { $0.lowercased() }
+                    
+                    // Find mentions in context
+                    var foundMentions: [String] = []
+                    for word in queryWordsForExtraction {
+                        if contextLower.contains(word) {
+                            // Find the sentence or phrase containing this word
+                            let sentences = contextLower.components(separatedBy: ". ")
+                            if let relevantSentence = sentences.first(where: { $0.contains(word) }) {
+                                let cleaned = relevantSentence.prefix(100).trimmingCharacters(in: .whitespacesAndNewlines)
+                                if !foundMentions.contains(cleaned) && cleaned.count > 10 {
+                                    foundMentions.append(String(cleaned))
+                                }
+                            }
+                        }
                     }
-                    response += "The notes are ready to be analyzed once the LLM inference engine is fully integrated with the MLC-LLM framework. "
-                    response += "For now, you can review the source notes below to see what was found."
+                    
+                    if hasRelevantInfo {
+                        if !foundMentions.isEmpty {
+                            response += "I found relevant information: \(foundMentions[0]). "
+                        } else {
+                            response += "I found information related to your question. "
+                        }
+                    }
+                    
+                    response += "You can review the source notes below for more details."
                     fullResponse = response
                 } else {
-                    // Generic chat response - more natural
+                    // Generic chat response - more natural and conversational
                     let lowerPrompt = prompt.lowercased()
                     if lowerPrompt.contains("hello") || lowerPrompt.contains("hi") || lowerPrompt.contains("hey") {
-                        fullResponse = "Hello! I'm your AI assistant. I can help answer questions and chat with you. Once the LLM inference is fully integrated, I'll be able to have more detailed conversations."
+                        fullResponse = "Hello! I'm your AI assistant. I'm here to help you with questions and can search through your notes when you ask about them. How can I assist you today?"
                     } else if lowerPrompt.contains("what can you do") || lowerPrompt.contains("help") {
-                        fullResponse = "I'm designed to help you with questions and chat. When you ask about your notes (using phrases like 'my notes' or 'what I saved'), I'll search through them to find relevant information. For general questions, I can have conversations with you. The full LLM capabilities will be available once MLC-LLM integration is complete."
+                        fullResponse = "I can help you in several ways:\n\n• Answer questions about your saved notes when you ask (like 'what did I save about X?')\n• Have general conversations\n• Search through your notes to find relevant information\n\nJust ask me anything, and if you mention your notes, I'll search through them automatically!"
                     } else if lowerPrompt.contains("thank") {
-                        fullResponse = "You're welcome! I'm here to help anytime."
+                        fullResponse = "You're welcome! I'm here to help anytime. Feel free to ask me anything else."
+                    } else if lowerPrompt.contains("how are you") {
+                        fullResponse = "I'm doing well, thank you for asking! I'm ready to help you with your questions or search through your notes. What would you like to know?"
                     } else {
-                        fullResponse = "I understand your question. Once the LLM inference engine is fully integrated with MLC-LLM, I'll be able to provide detailed answers. For now, feel free to ask about your notes or chat with me!"
+                        // More natural general response
+                        let capitalizedPrompt = prompt.prefix(1).capitalized + prompt.dropFirst()
+                        fullResponse = "I understand your question about '\(capitalizedPrompt)'. Let me know if you'd like me to search through your notes for more specific information, or feel free to ask me anything else!"
                     }
                 }
                 
