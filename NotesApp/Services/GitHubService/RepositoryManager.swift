@@ -641,6 +641,72 @@ actor RepositoryManager {
         
         return title.isEmpty ? "Untitled" : title
     }
+    
+    // MARK: - Release Management
+    
+    /// Commit releases.md file to GitHub
+    func commitReleases(_ markdown: String) async throws {
+        let config = await getConfig()
+        guard !config.owner.isEmpty && !config.repo.isEmpty && GitHubAuth.shared.hasAuthentication() else {
+            throw RepositoryError.notConfigured
+        }
+        
+        let path = "releases.md"
+        let message = "docs: Update releases summary"
+        
+        // Encode content as base64
+        guard let contentData = markdown.data(using: .utf8) else {
+            throw RepositoryError.encodingError
+        }
+        
+        let base64Content = contentData.base64EncodedString()
+        
+        do {
+            // Ensure the repository is initialized
+            try? await githubClient.initializeEmptyRepository(
+                owner: config.owner,
+                repo: config.repo,
+                branch: config.branch
+            )
+            
+            try await githubClient.createOrUpdateFile(
+                path: path,
+                content: base64Content,
+                message: message,
+                owner: config.owner,
+                repo: config.repo,
+                branch: config.branch
+            )
+        } catch {
+            throw error
+        }
+    }
+    
+    /// Pull releases.md file from GitHub
+    func pullReleases() async throws -> String {
+        let config = await getConfig()
+        guard !config.owner.isEmpty && !config.repo.isEmpty && GitHubAuth.shared.hasAuthentication() else {
+            throw RepositoryError.notConfigured
+        }
+        
+        do {
+            let content = try await githubClient.getFile(
+                path: "releases.md",
+                owner: config.owner,
+                repo: config.repo,
+                branch: config.branch
+            )
+            return content
+        } catch {
+            // If file doesn't exist, return empty
+            if let githubError = error as? GitHubError,
+               case .apiError(let message) = githubError,
+               message.contains("404") || message.contains("Not Found") {
+                return ""
+            }
+            throw error
+        }
+    }
 }
 
 enum RepositoryError: Error {

@@ -92,7 +92,7 @@ extension CGFloat {
         #if os(macOS)
         return 32
         #else
-        return 20
+        return 16
         #endif
     }
 }
@@ -120,7 +120,7 @@ extension View {
         #if os(macOS)
         return self.padding(.horizontal, 32).padding(.vertical, 20)
         #else
-        return self.padding(.horizontal, 20).padding(.vertical, 16)
+        return self.padding(.horizontal, 16).padding(.vertical, 12)
         #endif
     }
     
@@ -129,7 +129,7 @@ extension View {
         #if os(macOS)
         return self.padding(.horizontal, 32)
         #else
-        return self.padding(.horizontal, 20)
+        return self.padding(.horizontal, 16)
         #endif
     }
     

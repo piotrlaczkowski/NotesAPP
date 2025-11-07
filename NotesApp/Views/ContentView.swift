@@ -16,10 +16,12 @@ struct ContentView: View {
             List(selection: $selectedTab) {
                 Label("Notes", systemImage: "note.text")
                     .tag(0)
-                Label("Chat", systemImage: "bubble.left.and.bubble.right")
+                Label("Releases", systemImage: "sparkles")
                     .tag(1)
-                Label("Settings", systemImage: "gearshape")
+                Label("Chat", systemImage: "bubble.left.and.bubble.right")
                     .tag(2)
+                Label("Settings", systemImage: "gearshape")
+                    .tag(3)
             }
             .frame(minWidth: 200)
             .navigationTitle("NotesApp")
@@ -29,8 +31,10 @@ struct ContentView: View {
                 case 0:
                     HomeView()
                 case 1:
-                    ChatView()
+                    ReleaseView()
                 case 2:
+                    ChatView()
+                case 3:
                     SettingsView()
                 default:
                     HomeView()
@@ -80,7 +84,7 @@ struct ContentView: View {
             }
         }
         #else
-        // iOS: Use TabView
+        // iOS: Use TabView - ensure it fills the entire screen
         TabView(selection: $selectedTab) {
             HomeView()
                 .tabItem {
@@ -88,17 +92,23 @@ struct ContentView: View {
                 }
                 .tag(0)
             
+            ReleaseView()
+                .tabItem {
+                    Label("Releases", systemImage: "sparkles")
+                }
+                .tag(1)
+            
             ChatView()
                 .tabItem {
                     Label("Chat", systemImage: "bubble.left.and.bubble.right")
                 }
-                .tag(1)
+                .tag(2)
             
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
                 }
-                .tag(2)
+                .tag(3)
         }
         .sheet(item: $appState.pendingNoteToReview) { note in
             #if os(macOS)

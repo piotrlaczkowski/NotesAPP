@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct NotesApp: App {
     @StateObject private var appState = AppState()
+    @StateObject private var releaseService = ReleaseService.shared
     
     init() {
         // Suppress harmless macOS system warnings
@@ -14,6 +15,7 @@ struct NotesApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
+                .environmentObject(releaseService)
                 .preferredColorScheme(appState.colorScheme)
                 .onOpenURL { url in
                     // Handle URL scheme from Share Extension
@@ -23,6 +25,36 @@ struct NotesApp: App {
                         }
                     }
                 }
+                .task {
+                    await initializeReleaseService()
+                }
+        }
+    }
+    
+    @MainActor
+    private func initializeReleaseService() async {
+        // Load existing releases
+        await releaseService.loadReleases()
+        
+        // Try to pull latest releases.md from GitHub
+        do {
+            let markdown = try await RepositoryManager.shared.pullReleases()
+            if !markdown.isEmpty {
+                // Parse and merge releases from GitHub
+                let releaseRepository = ReleaseRepository.shared
+                let gitHubReleases = await releaseRepository.parseMarkdownReleases(markdown)
+                
+                // Save GitHub releases locally
+                for release in gitHubReleases {
+                    await releaseRepository.save(release)
+                }
+                
+                // Reload releases service
+                await releaseService.loadReleases()
+            }
+        } catch {
+            // Silently fail - releases.md might not exist yet
+            // which is fine for a new setup
         }
     }
     

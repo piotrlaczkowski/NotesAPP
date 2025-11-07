@@ -84,6 +84,49 @@ class LLMManager: ObservableObject {
         return service.generateChatResponseStream(prompt: prompt, context: context)
     }
     
+    /// Generate a LinkedIn post from note summaries
+    func generateLinkedInPost(noteSummaries: [String], topic: String? = nil) async throws -> String {
+        guard let service = llmService else {
+            throw LLMError(message: "Model not loaded")
+        }
+        
+        // Build context from note summaries - include all summaries
+        var context = "Recent interesting findings (\(noteSummaries.count) items):\n\n"
+        for (index, summary) in noteSummaries.enumerated() {
+            // Include full summary for each note
+            context += "\(index + 1). \(summary)\n"
+            if index < noteSummaries.count - 1 {
+                context += "\n" // Add spacing between items
+            }
+        }
+        
+        // Create prompt for LinkedIn post generation
+        let topicContext = topic.map { " about \($0)" } ?? ""
+        let prompt = """
+        You are a social media expert specializing in LinkedIn content. \
+        Create an engaging LinkedIn post\(topicContext) based on these \(noteSummaries.count) recent interesting findings. \
+        
+        CRITICAL REQUIREMENTS:
+        1. Include ALL \(noteSummaries.count) findings in your post - do not skip any
+        2. For each finding, include:
+           - The title or main topic
+           - A brief summary of what it is
+           - Why it's important, interesting, or useful
+           - The source URL if available (format as clickable link or mention the domain)
+        3. Explain the significance and value of each finding
+        4. Make connections between findings if relevant
+        5. Keep the tone professional yet engaging and conversational
+        
+        The post should highlight the most interesting insights from each finding, explain why they matter, \
+        and be suitable for sharing on LinkedIn. Format as a complete LinkedIn post with proper structure. \
+        Include relevant hashtags at the end.
+        
+        Ensure each of the \(noteSummaries.count) findings gets proper attention and explanation.
+        """
+        
+        return try await service.generateChatResponse(prompt: prompt, context: context)
+    }
+    
     var service: LLMService? {
         llmService
     }

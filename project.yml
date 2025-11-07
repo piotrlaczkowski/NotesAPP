@@ -24,12 +24,14 @@ targets:
           - "**/NotesDataModel.xcdatamodeld"
     info:
       path: NotesApp/Info.plist
+      generate: false
       properties:
         CFBundleShortVersionString: "1.0"
         CFBundleVersion: "1"
         CFBundleDisplayName: NotesApp
-        UIApplicationSceneManifest:
-          UIApplicationSupportsMultipleScenes: true
+        UIStatusBarHidden: false
+        UIViewControllerBasedStatusBarAppearance: true
+        UIRequiresFullScreen: true
         CFBundleURLTypes:
           - CFBundleURLSchemes:
               - notesapp
@@ -50,12 +52,15 @@ targets:
         SWIFT_VERSION: "5.9"
         SWIFT_OPTIMIZATION_LEVEL: "-Onone"
         DEVELOPMENT_TEAM: ""
-        CODE_SIGN_IDENTITY: "Apple Development"
-        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION: YES
         INFOPLIST_FILE: NotesApp/Info.plist
         ENABLE_PREVIEWS: true
-        SUPPORTS_MACCATALYST: true
-        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: false
+        TARGETED_DEVICE_FAMILY: "1"
     frameworks:
       - PDFKit
     entitlements:
@@ -123,8 +128,10 @@ targets:
         SWIFT_VERSION: "5.9"
         SWIFT_OPTIMIZATION_LEVEL: "-Onone"
         DEVELOPMENT_TEAM: ""
-        CODE_SIGN_IDENTITY: "Apple Development"
-        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGNING_ALLOWED: NO
         INFOPLIST_FILE: NotesApp/Info.plist
         ENABLE_PREVIEWS: true
         MACOSX_DEPLOYMENT_TARGET: "14.0"
@@ -149,6 +156,8 @@ targets:
     sources:
       - path: ShareExtension
       - path: NotesApp/Models
+        excludes:
+          - "**/Release.swift"
       - path: NotesApp/Services/ContentExtractor
       - path: NotesApp/Services/LLMEngine
         excludes:
@@ -157,6 +166,8 @@ targets:
       - path: NotesApp/Services/StorageService
         excludes:
           - "**/NotesDataModel.xcdatamodeld"
+          - "**/ReleaseService"
+          - "**/ReleaseRepository.swift"
       - path: NotesApp/Utilities
       - path: NotesApp/Views/Components
     info:
@@ -178,9 +189,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.piotrlaczkowski.NotesApp.ShareExtension
         SWIFT_VERSION: "5.9"
         INFOPLIST_FILE: ShareExtension/Info.plist
-        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: ""
-        CODE_SIGN_IDENTITY: "Apple Development"
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGNING_ALLOWED: NO
         ENABLE_PREVIEWS: true
         SUPPORTED_PLATFORMS: iphoneos iphonesimulator
         "ONLY_ACTIVE_ARCH[config=Debug][sdk=iphonesimulator*]": YES
