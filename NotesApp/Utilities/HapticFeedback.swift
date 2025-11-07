@@ -1,6 +1,5 @@
-import UIKit
-
 #if os(iOS)
+import UIKit
 struct HapticFeedback {
     static func light() {
         let generator = UIImpactFeedbackGenerator(style: .light)

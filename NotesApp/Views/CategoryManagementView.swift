@@ -35,7 +35,9 @@ struct CategoryManagementView: View {
                 }
             }
             .navigationTitle("Manage Categories")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") {
@@ -109,7 +111,9 @@ struct AddCategoryView: View {
                 Section {
                     TextField("Category Name", text: $categoryName)
                         .focused($isFocused)
+                        #if os(iOS)
                         .autocapitalization(.words)
+                        #endif
                 } header: {
                     Text("New Category")
                 } footer: {
@@ -117,7 +121,9 @@ struct AddCategoryView: View {
                 }
             }
             .navigationTitle("Add Category")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -169,13 +175,17 @@ struct EditCategoryView: View {
                 Section {
                     TextField("Category Name", text: $categoryName)
                         .focused($isFocused)
+                        #if os(iOS)
                         .autocapitalization(.words)
+                        #endif
                 } header: {
                     Text("Edit Category")
                 }
             }
             .navigationTitle("Edit Category")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {

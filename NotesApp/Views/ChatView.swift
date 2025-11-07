@@ -422,7 +422,7 @@ struct SourceNoteCard: View {
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.systemGray6).opacity(0.6))
+                    .fill(Color.systemGray6.opacity(0.6))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12)

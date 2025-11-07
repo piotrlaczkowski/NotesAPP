@@ -39,7 +39,7 @@ extension Color {
             traitCollection.userInterfaceStyle == .dark ? UIColor(darkColor) : UIColor(lightColor)
         })
         #else
-        return Color(NSColor { appearance in
+        return Color(NSColor(name: nil) { appearance in
             appearance.name == .darkAqua ? NSColor(darkColor) : NSColor(lightColor)
         })
         #endif
@@ -62,6 +62,39 @@ extension CGFloat {
     static let spacingM: CGFloat = 16
     static let spacingL: CGFloat = 24
     static let spacingXL: CGFloat = 32
+    
+    // Platform-adaptive spacing
+    static var adaptiveSpacingM: CGFloat {
+        #if os(macOS)
+        return 20
+        #else
+        return 16
+        #endif
+    }
+    
+    static var adaptiveSpacingL: CGFloat {
+        #if os(macOS)
+        return 32
+        #else
+        return 24
+        #endif
+    }
+    
+    static var adaptiveSpacingXL: CGFloat {
+        #if os(macOS)
+        return 48
+        #else
+        return 32
+        #endif
+    }
+    
+    static var adaptivePadding: CGFloat {
+        #if os(macOS)
+        return 32
+        #else
+        return 20
+        #endif
+    }
 }
 
 // MARK: - Corner Radius
@@ -69,6 +102,56 @@ extension CGFloat {
     static let radiusS: CGFloat = 8
     static let radiusM: CGFloat = 12
     static let radiusL: CGFloat = 16
+    
+    // Platform-adaptive corner radius
+    static var adaptiveRadius: CGFloat {
+        #if os(macOS)
+        return 10
+        #else
+        return 12
+        #endif
+    }
+}
+
+// MARK: - Layout Helpers
+extension View {
+    /// Applies platform-adaptive padding
+    func adaptivePadding() -> some View {
+        #if os(macOS)
+        return self.padding(.horizontal, 32).padding(.vertical, 20)
+        #else
+        return self.padding(.horizontal, 20).padding(.vertical, 16)
+        #endif
+    }
+    
+    /// Applies platform-adaptive horizontal padding
+    func adaptiveHorizontalPadding() -> some View {
+        #if os(macOS)
+        return self.padding(.horizontal, 32)
+        #else
+        return self.padding(.horizontal, 20)
+        #endif
+    }
+    
+    /// Platform-adaptive frame constraints
+    func adaptiveFrame(minWidth: CGFloat? = nil, maxWidth: CGFloat? = nil) -> some View {
+        #if os(macOS)
+        let min = minWidth ?? 600
+        let max = maxWidth ?? 1200
+        return self.frame(minWidth: min, maxWidth: max)
+        #else
+        return self.frame(maxWidth: maxWidth ?? .infinity)
+        #endif
+    }
+    
+    /// Platform-adaptive list row styling
+    func adaptiveListRow() -> some View {
+        #if os(macOS)
+        return self.padding(.vertical, 8)
+        #else
+        return self
+        #endif
+    }
 }
 
 // MARK: - Shadows
@@ -155,9 +238,45 @@ import AppKit
 
 extension Color {
     init(light: Color, dark: Color) {
-        self.init(NSColor { appearance in
+        self.init(NSColor(name: nil) { appearance in
             appearance.name == .darkAqua ? NSColor(dark) : NSColor(light)
         })
+    }
+    
+    static var systemBackground: Color {
+        Color(NSColor.windowBackgroundColor)
+    }
+    
+    static var systemGray6: Color {
+        Color(NSColor.controlBackgroundColor)
+    }
+    
+    static var systemGray5: Color {
+        Color(NSColor.controlBackgroundColor)
+    }
+    
+    static var secondarySystemBackground: Color {
+        Color(NSColor.textBackgroundColor)
+    }
+}
+#endif
+
+#if os(iOS)
+extension Color {
+    static var systemBackground: Color {
+        Color(.systemBackground)
+    }
+    
+    static var systemGray6: Color {
+        Color(.systemGray6)
+    }
+    
+    static var systemGray5: Color {
+        Color(.systemGray5)
+    }
+    
+    static var secondarySystemBackground: Color {
+        Color(.secondarySystemBackground)
     }
 }
 #endif

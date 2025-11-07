@@ -140,37 +140,38 @@ class ShareViewController: UIViewController {
         // Small delay to let system initialize cfprefsd connection
         try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
         
+        // Capture extensionContext on main actor before detached task
+        let context = await MainActor.run { extensionContext }
+        
         // Save URL to shared UserDefaults - main app will process it
         // Initialize UserDefaults fully asynchronously to avoid blocking
-        let sharedDefaults = await Task.detached(priority: .userInitiated) {
-            UserDefaults(suiteName: "group.com.piotrlaczkowski.NotesApp")
-        }.value
+        let suiteName = "group.com.piotrlaczkowski.NotesApp"
+        let urlString = url.absoluteString
         
-        guard let sharedDefaults = sharedDefaults else {
-            print("Warning: App Group UserDefaults not available")
-            await MainActor.run {
-                extensionContext?.completeRequest(returningItems: nil)
-            }
-            return
-        }
-        
-        // Save the URL string for the main app to process
-        // Do this off main thread to avoid blocking
         await Task.detached(priority: .userInitiated) {
-            sharedDefaults.set(url.absoluteString, forKey: "pendingURLToAnalyze")
-            // Don't call synchronize() - it blocks and iOS handles persistence automatically
-        }.value
-        
-        // Post notification on main thread
-        await MainActor.run {
-            NotificationCenter.default.post(name: NSNotification.Name("NewURLShared"), object: nil)
+            guard let sharedDefaults = UserDefaults(suiteName: suiteName) else {
+                print("Warning: App Group UserDefaults not available")
+                Task { @MainActor in
+                    context?.completeRequest(returningItems: nil)
+                }
+                return
+            }
             
-            // Try to open the app, but don't rely on it working
-            // iOS security may prevent automatic switching
-            if let appURL = URL(string: "notesapp://open"), let context = self.extensionContext {
-                print("Extension: Attempting to open app with URL scheme")
-                context.open(appURL) { success in
-                    print("Extension: URL scheme open result: \(success)")
+            // Save the URL string for the main app to process
+            sharedDefaults.set(urlString, forKey: "pendingURLToAnalyze")
+            // Don't call synchronize() - it blocks and iOS handles persistence automatically
+            
+            // Post notification on main thread
+            Task { @MainActor in
+                NotificationCenter.default.post(name: NSNotification.Name("NewURLShared"), object: nil)
+                
+                // Try to open the app, but don't rely on it working
+                // iOS security may prevent automatic switching
+                if let appURL = URL(string: "notesapp://open") {
+                    print("Extension: Attempting to open app with URL scheme")
+                    context?.open(appURL) { success in
+                        print("Extension: URL scheme open result: \(success)")
+                    }
                 }
             }
         }

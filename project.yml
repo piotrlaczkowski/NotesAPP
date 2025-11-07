@@ -54,6 +54,8 @@ targets:
         CODE_SIGN_STYLE: Automatic
         INFOPLIST_FILE: NotesApp/Info.plist
         ENABLE_PREVIEWS: true
+        SUPPORTS_MACCATALYST: true
+        TARGETED_DEVICE_FAMILY: "1,2"
     frameworks:
       - PDFKit
     entitlements:
@@ -66,6 +68,81 @@ targets:
         keychain-access-groups:
           - $(AppIdentifierPrefix)com.piotrlaczkowski.NotesApp
 
+  NotesAppMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    preBuildScripts:
+      - name: "Remove ShareExtension artifacts"
+        script: |
+          # Remove any ShareExtension.appex from build products
+          echo "Checking for ShareExtension artifacts..."
+          if [ -d "${BUILT_PRODUCTS_DIR}/ShareExtension.appex" ]; then
+            rm -rf "${BUILT_PRODUCTS_DIR}/ShareExtension.appex"
+            echo "✓ Removed ShareExtension.appex from build products"
+          fi
+          # Also check in the app bundle
+          if [ -d "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/ShareExtension.appex" ]; then
+            rm -rf "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/ShareExtension.appex"
+            echo "✓ Removed ShareExtension.appex from app bundle"
+          fi
+          # Check in DerivedData
+          if [ -n "${DERIVED_DATA_DIR}" ] && [ -d "${DERIVED_DATA_DIR}" ]; then
+            find "${DERIVED_DATA_DIR}" -name "ShareExtension.appex" -type d -exec rm -rf {} + 2>/dev/null || true
+          fi
+          echo "ShareExtension cleanup complete"
+        shell: /bin/sh
+    postBuildScripts:
+      - name: "Final ShareExtension cleanup"
+        script: |
+          # Final check after build
+          if [ -d "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/ShareExtension.appex" ]; then
+            rm -rf "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/ShareExtension.appex"
+            echo "✓ Post-build: Removed ShareExtension.appex from app bundle"
+          fi
+        shell: /bin/sh
+    sources:
+      - path: NotesApp
+        excludes:
+          - "**/*.plist"
+          - "**/NotesDataModel.xcdatamodeld"
+    info:
+      path: NotesApp/Info.plist
+      properties:
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        CFBundleDisplayName: NotesApp
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - notesapp
+            CFBundleURLName: com.piotrlaczkowski.NotesApp
+        LSMinimumSystemVersion: "14.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.piotrlaczkowski.NotesApp
+        SWIFT_VERSION: "5.9"
+        SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_IDENTITY: "Apple Development"
+        CODE_SIGN_STYLE: Automatic
+        INFOPLIST_FILE: NotesApp/Info.plist
+        ENABLE_PREVIEWS: true
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        EMBEDDED_CONTENT_CONTAINS_SWIFT: NO
+        ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: NO
+        SUPPORTED_PLATFORMS: macosx
+        "EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]": ShareExtension
+        "OTHER_LDFLAGS[sdk=macosx*]": -Wl,-dead_strip
+    frameworks:
+      - PDFKit
+    entitlements:
+      path: NotesApp.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.piotrlaczkowski.NotesApp
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+
   ShareExtension:
     type: app-extension
     platform: iOS
@@ -74,6 +151,9 @@ targets:
       - path: NotesApp/Models
       - path: NotesApp/Services/ContentExtractor
       - path: NotesApp/Services/LLMEngine
+        excludes:
+          - "**/RAGRelevanceDetector.swift"
+          - "**/RAGService.swift"
       - path: NotesApp/Services/StorageService
         excludes:
           - "**/NotesDataModel.xcdatamodeld"
@@ -102,6 +182,21 @@ targets:
         DEVELOPMENT_TEAM: ""
         CODE_SIGN_IDENTITY: "Apple Development"
         ENABLE_PREVIEWS: true
+        SUPPORTED_PLATFORMS: iphoneos iphonesimulator
+        "ONLY_ACTIVE_ARCH[config=Debug][sdk=iphonesimulator*]": YES
+        "SUPPORTED_PLATFORMS[sdk=macosx*]": ""
+        SKIP_INSTALL: YES
+        "VALID_ARCHS[sdk=macosx*]": ""
+        "ARCHS[sdk=macosx*]": ""
+        "EXCLUDED_ARCHS[sdk=macosx*]": arm64 x86_64
+        "ONLY_ACTIVE_ARCH[sdk=macosx*]": NO
+        "EXECUTABLE_EXTENSION[sdk=macosx*]": ""
+        "PRODUCT_NAME[sdk=macosx*]": ""
+        "SKIP_INSTALL[sdk=macosx*]": YES
+        "GENERATE_INFOPLIST_FILE[sdk=macosx*]": NO
+        "INFOPLIST_FILE[sdk=macosx*]": ""
+        "CODE_SIGNING_ALLOWED[sdk=macosx*]": NO
+        "CODE_SIGNING_REQUIRED[sdk=macosx*]": NO
     frameworks:
       - PDFKit
     entitlements:
@@ -120,6 +215,19 @@ schemes:
       targets:
         ShareExtension: []
         NotesApp: [ShareExtension]
+    run:
+      config: Debug
+    archive:
+      config: Release
+  
+  NotesAppMac:
+    build:
+      targets:
+        NotesAppMac: [run, test, profile, analyze, archive]
+      parallelizeBuild: true
+      buildImplicitDependencies: false
+      preActions: []
+      postActions: []
     run:
       config: Debug
     archive:

@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 struct TagFilterChip: View {
     let tag: String
@@ -20,7 +23,7 @@ struct TagFilterChip: View {
             .foregroundColor(isSelected ? .white : .primary)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(isSelected ? Color.blue : Color(.systemGray5))
+            .background(isSelected ? Color.blue : Color.systemGray5)
             .clipShape(Capsule())
         }
         .buttonStyle(PlainButtonStyle())

@@ -7,6 +7,14 @@ struct NoteDetailView: View {
     @State private var showDeleteConfirmation = false
     @State private var isReady = false
     
+    private var toolbarPlacement: ToolbarItemPlacement {
+        #if os(iOS)
+        return .topBarTrailing
+        #else
+        return .automatic
+        #endif
+    }
+    
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -22,7 +30,7 @@ struct NoteDetailView: View {
                                 Image(systemName: "arrow.up.right.square")
                             }
                             .padding()
-                            .background(Color(.systemGray6))
+                            .background(Color.systemGray6)
                             .cornerRadius(10)
                         }
                     }
@@ -44,7 +52,7 @@ struct NoteDetailView: View {
                         TextEditor(text: $note.summary)
                             .frame(height: 100)
                             .padding(8)
-                            .background(Color(.systemGray6))
+                            .background(Color.systemGray6)
                             .cornerRadius(10)
                     }
                     
@@ -67,14 +75,16 @@ struct NoteDetailView: View {
                                 .padding()
                         }
                         .frame(maxHeight: 300)
-                        .background(Color(.systemGray6))
+                        .background(Color.systemGray6)
                         .cornerRadius(10)
                     }
                 }
                 .padding()
             }
             .navigationTitle("Note")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -82,7 +92,7 @@ struct NoteDetailView: View {
                     }
                 }
                 
-                ToolbarItemGroup(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: toolbarPlacement) {
                     // Delete button
                     Button(role: .destructive) {
                         showDeleteConfirmation = true

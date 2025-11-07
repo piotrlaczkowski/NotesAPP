@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 struct ReviewNoteView: View {
     @State var note: Note
@@ -11,6 +14,502 @@ struct ReviewNoteView: View {
     @State private var editableWhyAdvantageous: String = ""
     
     var body: some View {
+        #if os(macOS)
+        macView
+        #else
+        iosView
+        #endif
+    }
+    
+    // MARK: - macOS View
+    #if os(macOS)
+    private var macView: some View {
+        VStack(spacing: 0) {
+            // Header
+            headerSection
+            
+            Divider()
+            
+            // Main Content
+            ScrollView {
+                VStack(spacing: CGFloat.adaptiveSpacingL) {
+                    // Basic Info Card
+                    basicInfoCard
+                        .padding(.top, CGFloat.adaptiveSpacingL)
+                    
+                    // Analysis Cards
+                    if !editableWhatIsIt.isEmpty || !editableWhyAdvantageous.isEmpty {
+                        analysisCards
+                    }
+                    
+                    // Tags Card
+                    tagsCard
+                    
+                    // Preview Card
+                    previewCard
+                }
+                .adaptiveHorizontalPadding()
+                .padding(.vertical, CGFloat.adaptiveSpacingL)
+                .frame(maxWidth: 900)
+                .frame(maxWidth: .infinity)
+            }
+            
+            // Footer with actions
+            footerSection
+        }
+        .frame(width: 900, height: 700)
+        .background {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(NSColor.windowBackgroundColor))
+        }
+        .overlay {
+            if viewModel.isSaving {
+                savingOverlay
+            }
+        }
+        .alert("Error", isPresented: Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )) {
+            Button("OK") {
+                viewModel.errorMessage = nil
+            }
+        } message: {
+            if let error = viewModel.errorMessage {
+                Text(error)
+            }
+        }
+        .onAppear {
+            initializeData()
+        }
+        .onSubmit {
+            if !viewModel.isSaving {
+                saveNote()
+            }
+        }
+    }
+    
+    private var headerSection: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Review Note")
+                    .font(.system(size: 22, weight: .semibold, design: .rounded))
+                    .foregroundColor(.primary)
+                
+                Text("Review and edit before saving")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            Button(action: { dismiss() }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(.secondary)
+                    .symbolRenderingMode(.hierarchical)
+            }
+            .buttonStyle(.plain)
+            .help("Close (Esc)")
+            .keyboardShortcut(.escape, modifiers: [])
+        }
+        .padding(.horizontal, CGFloat.adaptivePadding)
+        .padding(.vertical, 20)
+    }
+    
+    private var basicInfoCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Title
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Title", systemImage: "text.bubble")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+                
+                TextField("Note title", text: $note.title)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 18, weight: .semibold))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(NSColor.controlBackgroundColor))
+                    }
+            }
+            
+            // Category and Summary Row
+            HStack(spacing: 16) {
+                // Category
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Category", systemImage: "folder")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.5)
+                    
+                    categoryPicker
+                }
+                .frame(maxWidth: .infinity)
+                
+                // URL (if available)
+                if note.url != nil {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Source", systemImage: "link")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .textCase(.uppercase)
+                            .tracking(0.5)
+                        
+                        urlLinkView
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            
+            // Summary
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Summary", systemImage: "doc.text")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+                
+                TextEditor(text: $note.summary)
+                    .font(.system(size: 14))
+                    .frame(height: 120)
+                    .padding(12)
+                    .background {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(NSColor.controlBackgroundColor))
+                    }
+                    .scrollContentBackground(.hidden)
+            }
+        }
+        .padding(20)
+        .background {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        }
+    }
+    
+    private var categoryPicker: some View {
+        Menu {
+            Button("None") {
+                note.category = nil
+            }
+            
+            if let analysisCategory = analysis.category, !analysisCategory.isEmpty {
+                Divider()
+                Text("Suggested")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                
+                Button {
+                    note.category = analysisCategory
+                } label: {
+                    HStack {
+                        Text(analysisCategory)
+                        if note.category == analysisCategory {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+            
+            if !availableCategories.isEmpty {
+                Divider()
+                Text("Categories")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                
+                ForEach(availableCategories, id: \.self) { cat in
+                    Button {
+                        note.category = cat
+                    } label: {
+                        HStack {
+                            Text(cat)
+                            if note.category == cat {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack {
+                Text(note.category ?? analysis.category ?? "Select category")
+                    .foregroundColor(note.category != nil || analysis.category != nil ? .primary : .secondary)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(NSColor.controlBackgroundColor))
+            }
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var urlLinkView: some View {
+        Group {
+            if let url = note.url {
+                Link(destination: url) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "link")
+                            .font(.system(size: 12))
+                        Text(url.host ?? url.absoluteString)
+                            .lineLimit(1)
+                            .font(.system(size: 13))
+                        Spacer()
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.system(size: 11))
+                    }
+                    .foregroundColor(.accentColor)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.accentColor.opacity(0.1))
+                    }
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text("No URL")
+                    .foregroundColor(.secondary)
+                    .font(.system(size: 13))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(NSColor.controlBackgroundColor))
+                    }
+            }
+        }
+    }
+    
+    private var analysisCards: some View {
+        VStack(spacing: 16) {
+            if !editableWhatIsIt.isEmpty {
+                analysisCard(
+                    title: "What is this?",
+                    icon: "questionmark.circle.fill",
+                    text: $editableWhatIsIt,
+                    color: .blue
+                )
+            }
+            
+            if !editableWhyAdvantageous.isEmpty {
+                analysisCard(
+                    title: "Why is this useful?",
+                    icon: "star.circle.fill",
+                    text: $editableWhyAdvantageous,
+                    color: .orange
+                )
+            }
+        }
+    }
+    
+    private func analysisCard(title: String, icon: String, text: Binding<String>, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(color)
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.primary)
+            }
+            
+            TextEditor(text: text)
+                .font(.system(size: 14))
+                .frame(height: 100)
+                .padding(12)
+                .background {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(NSColor.controlBackgroundColor))
+                }
+                .scrollContentBackground(.hidden)
+                .onChange(of: text.wrappedValue) { _, newValue in
+                    updateAnalysis()
+                }
+        }
+        .padding(20)
+        .background {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        }
+    }
+    
+    private var tagsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "tag.fill")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.purple)
+                Text("Tags")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.primary)
+            }
+            
+            TagEditorView(tags: $note.tags)
+                .padding(12)
+                .background {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(NSColor.controlBackgroundColor))
+                }
+        }
+        .padding(20)
+        .background {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        }
+    }
+    
+    private var previewCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "eye.fill")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.green)
+                Text("Content Preview")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.primary)
+            }
+            
+            ScrollView {
+                Text(note.content)
+                    .font(.system(size: 13, design: .default))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+            .frame(height: 120)
+            .padding(12)
+            .background {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(NSColor.controlBackgroundColor))
+            }
+        }
+        .padding(20)
+        .background {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        }
+    }
+    
+    private var footerSection: some View {
+        VStack(spacing: 0) {
+            Divider()
+            
+            HStack {
+                Button(action: { dismiss() }) {
+                    Text("Discard")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.escape, modifiers: [])
+                
+                Spacer()
+                
+                HStack(spacing: 12) {
+                    keyboardShortcutHint(key: "⌘S", description: "Save")
+                    keyboardShortcutHint(key: "Esc", description: "Discard")
+                }
+            }
+            .padding(.horizontal, CGFloat.adaptivePadding)
+            .padding(.vertical, 16)
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+            
+            // Save Button
+            HStack {
+                Spacer()
+                
+                Button(action: saveNote) {
+                    HStack(spacing: 10) {
+                        if viewModel.isSaving {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .scaleEffect(0.8)
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        Text(viewModel.isSaving ? "Saving..." : "Save Note")
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .frame(width: 200)
+                    .frame(height: 44)
+                    .background {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(viewModel.isSaving ? Color.accentColor.opacity(0.7) : Color.accentColor)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isSaving)
+                .keyboardShortcut(.return, modifiers: .command)
+                .help("Save note (⌘↩)")
+                
+                Spacer()
+            }
+            .padding(.horizontal, CGFloat.adaptivePadding)
+            .padding(.bottom, 20)
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+        }
+    }
+    
+    private func keyboardShortcutHint(key: String, description: String) -> some View {
+        HStack(spacing: 4) {
+            Text(key)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.secondary.opacity(0.15))
+                }
+            Text(description)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+        }
+    }
+    
+    private var savingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.2)
+                .ignoresSafeArea()
+            
+            VStack(spacing: 16) {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .scaleEffect(1.2)
+                    .tint(.white)
+                
+                Text("Saving note...")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white)
+            }
+            .padding(24)
+            .background {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.ultraThinMaterial)
+            }
+        }
+    }
+    #endif
+    
+    // MARK: - iOS View
+    #if os(iOS)
+    private var iosView: some View {
         NavigationStack {
             Form {
                 Section("Title") {
@@ -30,7 +529,6 @@ struct ReviewNoteView: View {
                     )) {
                         Text("None").tag(String?.none)
                         
-                        // Add a divider by creating two groups
                         if let analysisCategory = analysis.category, !analysisCategory.isEmpty {
                             Section("Suggested") {
                                 Text(analysisCategory).tag(analysisCategory as String?)
@@ -55,17 +553,7 @@ struct ReviewNoteView: View {
                         .frame(height: 100)
                         .font(.subheadline)
                         .onChange(of: editableWhatIsIt) { _, newValue in
-                            // Update both local analysis and AppState when user edits
-                            let updatedAnalysis = NoteAnalysis(
-                                title: analysis.title,
-                                summary: analysis.summary,
-                                tags: analysis.tags,
-                                category: analysis.category,
-                                whatIsIt: newValue.isEmpty ? nil : newValue,
-                                whyAdvantageous: analysis.whyAdvantageous
-                            )
-                            analysis = updatedAnalysis
-                            appState.pendingNoteAnalysis = updatedAnalysis
+                            updateAnalysis()
                         }
                 }
                 
@@ -74,17 +562,7 @@ struct ReviewNoteView: View {
                         .frame(height: 100)
                         .font(.subheadline)
                         .onChange(of: editableWhyAdvantageous) { _, newValue in
-                            // Update both local analysis and AppState when user edits
-                            let updatedAnalysis = NoteAnalysis(
-                                title: analysis.title,
-                                summary: analysis.summary,
-                                tags: analysis.tags,
-                                category: analysis.category,
-                                whatIsIt: analysis.whatIsIt,
-                                whyAdvantageous: newValue.isEmpty ? nil : newValue
-                            )
-                            analysis = updatedAnalysis
-                            appState.pendingNoteAnalysis = updatedAnalysis
+                            updateAnalysis()
                         }
                 }
                 
@@ -113,27 +591,13 @@ struct ReviewNoteView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Discard") {
-                        #if os(iOS)
                         HapticFeedback.selection()
-                        #endif
                         dismiss()
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
-                        Task {
-                            // The edited analysis values are already stored in appState.pendingNoteAnalysis
-                            // via the onChange handlers, so we just need to save the note
-                            await viewModel.approve(note: note)
-                            if viewModel.errorMessage == nil {
-                                #if os(iOS)
-                                HapticFeedback.success()
-                                #endif
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    dismiss()
-                                }
-                            }
-                        }
+                        saveNote()
                     } label: {
                         HStack(spacing: 6) {
                             if viewModel.isSaving {
@@ -160,21 +624,54 @@ struct ReviewNoteView: View {
                 }
             }
             .onAppear {
-                // Apply analysis results
-                note.title = analysis.title
-                note.summary = analysis.summary
-                note.tags = analysis.tags
-                if note.category == nil {
-                    note.category = analysis.category
-                }
-                
-                // Initialize editable fields from analysis
-                editableWhatIsIt = analysis.whatIsIt ?? ""
-                editableWhyAdvantageous = analysis.whyAdvantageous ?? ""
-                
-                // Load categories
-                Task {
-                    await loadCategories()
+                initializeData()
+            }
+        }
+    }
+    #endif
+    
+    // MARK: - Helper Methods
+    private func initializeData() {
+        // Apply analysis results
+        note.title = analysis.title
+        note.summary = analysis.summary
+        note.tags = analysis.tags
+        if note.category == nil {
+            note.category = analysis.category
+        }
+        
+        // Initialize editable fields from analysis
+        editableWhatIsIt = analysis.whatIsIt ?? ""
+        editableWhyAdvantageous = analysis.whyAdvantageous ?? ""
+        
+        // Load categories
+        Task {
+            await loadCategories()
+        }
+    }
+    
+    private func updateAnalysis() {
+        let updatedAnalysis = NoteAnalysis(
+            title: analysis.title,
+            summary: analysis.summary,
+            tags: analysis.tags,
+            category: analysis.category,
+            whatIsIt: editableWhatIsIt.isEmpty ? nil : editableWhatIsIt,
+            whyAdvantageous: editableWhyAdvantageous.isEmpty ? nil : editableWhyAdvantageous
+        )
+        analysis = updatedAnalysis
+        appState.pendingNoteAnalysis = updatedAnalysis
+    }
+    
+    private func saveNote() {
+        Task {
+            await viewModel.approve(note: note)
+            if viewModel.errorMessage == nil {
+                #if os(iOS)
+                HapticFeedback.success()
+                #endif
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    dismiss()
                 }
             }
         }

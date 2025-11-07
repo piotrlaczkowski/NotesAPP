@@ -10,6 +10,77 @@ struct ContentView: View {
     @State private var lastPendingNoteCheck = Date.distantPast
     
     var body: some View {
+        #if os(macOS)
+        // macOS: Use NavigationSplitView with sidebar for better UX
+        NavigationSplitView {
+            List(selection: $selectedTab) {
+                Label("Notes", systemImage: "note.text")
+                    .tag(0)
+                Label("Chat", systemImage: "bubble.left.and.bubble.right")
+                    .tag(1)
+                Label("Settings", systemImage: "gearshape")
+                    .tag(2)
+            }
+            .frame(minWidth: 200)
+            .navigationTitle("NotesApp")
+        } detail: {
+            Group {
+                switch selectedTab {
+                case 0:
+                    HomeView()
+                case 1:
+                    ChatView()
+                case 2:
+                    SettingsView()
+                default:
+                    HomeView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .sheet(item: $appState.pendingNoteToReview) { note in
+            #if os(macOS)
+            ReviewNoteView(
+                note: note,
+                analysis: appState.pendingNoteAnalysis ?? NoteAnalysis(
+                    title: note.title,
+                    summary: note.summary,
+                    tags: note.tags,
+                    category: note.category,
+                    whatIsIt: nil,
+                    whyAdvantageous: nil
+                )
+            )
+            .onDisappear {
+                appState.pendingNoteAnalysis = nil
+            }
+            #else
+            NavigationStack {
+                ReviewNoteView(
+                    note: note,
+                    analysis: appState.pendingNoteAnalysis ?? NoteAnalysis(
+                        title: note.title,
+                        summary: note.summary,
+                        tags: note.tags,
+                        category: note.category,
+                        whatIsIt: nil,
+                        whyAdvantageous: nil
+                    )
+                )
+            }
+            .onDisappear {
+                appState.pendingNoteAnalysis = nil
+            }
+            #endif
+        }
+        .onAppear {
+            setupNotificationObserver()
+            Task {
+                checkPendingNoteWithDebounce()
+            }
+        }
+        #else
+        // iOS: Use TabView
         TabView(selection: $selectedTab) {
             HomeView()
                 .tabItem {
@@ -30,6 +101,23 @@ struct ContentView: View {
                 .tag(2)
         }
         .sheet(item: $appState.pendingNoteToReview) { note in
+            #if os(macOS)
+            ReviewNoteView(
+                note: note,
+                analysis: appState.pendingNoteAnalysis ?? NoteAnalysis(
+                    title: note.title,
+                    summary: note.summary,
+                    tags: note.tags,
+                    category: note.category,
+                    whatIsIt: nil,
+                    whyAdvantageous: nil
+                )
+            )
+            .onDisappear {
+                // Clear analysis when sheet dismisses
+                appState.pendingNoteAnalysis = nil
+            }
+            #else
             NavigationStack {
                 ReviewNoteView(
                     note: note,
@@ -47,6 +135,7 @@ struct ContentView: View {
                 // Clear analysis when sheet dismisses
                 appState.pendingNoteAnalysis = nil
             }
+            #endif
         }
         .onAppear {
             setupNotificationObserver()
@@ -75,6 +164,7 @@ struct ContentView: View {
                 checkPendingNoteWithDebounce()
             }
         }
+        #endif
         #endif
     }
     

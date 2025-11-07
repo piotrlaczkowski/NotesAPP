@@ -16,8 +16,8 @@ struct SettingsView: View {
                 // Background
                 LinearGradient(
                     gradient: Gradient(colors: [
-                        Color(.systemBackground),
-                        Color(.systemBackground).opacity(0.95)
+                        Color.systemBackground,
+                        Color.systemBackground.opacity(0.95)
                     ]),
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -483,7 +483,7 @@ struct ThemeSettingsView: View {
             .padding(.horizontal, 12)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.systemBackground))
+                    .fill(Color.systemBackground)
                     .stroke(
                         appearance == tag ?
                         LinearGradient(colors: [.blue, .blue.opacity(0.5)], startPoint: .topLeading, endPoint: .bottomTrailing) :
@@ -516,7 +516,7 @@ struct ThemeSettingsView: View {
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(.systemBackground))
+                    .fill(Color.systemBackground)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
@@ -603,9 +603,11 @@ struct PATAuthView: View {
                     SecureField("ghp_xxxxxxxxxxxxxxxxxxxx", text: $token)
                         .textContentType(.password)
                         .autocorrectionDisabled()
+                        #if os(iOS)
                         .textInputAutocapitalization(.never)
+                        #endif
                         .padding(10)
-                        .background(Color(.systemGray6))
+                        .background(Color.systemGray6)
                         .cornerRadius(8)
                 }
                 
@@ -944,12 +946,14 @@ struct GitHubRepositoryView: View {
                     TextField("piotrlaczkowski", text: $owner)
                         .textContentType(.username)
                         .autocorrectionDisabled()
+                        #if os(iOS)
                         .textInputAutocapitalization(.never)
+                        #endif
                         .onChange(of: owner) { _, newValue in
                             parseGitHubURL(newValue)
                         }
                         .padding(10)
-                        .background(Color(.systemGray6))
+                        .background(Color.systemGray6)
                         .cornerRadius(8)
                 }
             } header: {
@@ -966,14 +970,16 @@ struct GitHubRepositoryView: View {
                     TextField("LibrarianAPP", text: $repo)
                         .textContentType(.none)
                         .autocorrectionDisabled()
+                        #if os(iOS)
                         .textInputAutocapitalization(.never)
+                        #endif
                         .onChange(of: repo) { _, newValue in
                             if newValue.contains("github.com") {
                                 parseGitHubURL(newValue)
                             }
                         }
                         .padding(10)
-                        .background(Color(.systemGray6))
+                        .background(Color.systemGray6)
                         .cornerRadius(8)
                 }
             } header: {
@@ -997,9 +1003,11 @@ struct GitHubRepositoryView: View {
                     TextField("main", text: $branch)
                         .textContentType(.none)
                         .autocorrectionDisabled()
+                        #if os(iOS)
                         .textInputAutocapitalization(.never)
+                        #endif
                         .padding(10)
-                        .background(Color(.systemGray6))
+                        .background(Color.systemGray6)
                         .cornerRadius(8)
                 }
             } header: {
@@ -1104,7 +1112,7 @@ struct GitHubRepositoryView: View {
                             }
                         }
                         .padding(8)
-                        .background(Color(.systemGray6))
+                        .background(Color.systemGray6)
                         .cornerRadius(6)
                     }
                 } header: {
@@ -1268,9 +1276,11 @@ struct HuggingFaceTokenView: View {
                     SecureField("hf_xxxxxxxxxxxxxxxxxxxx", text: $token)
                         .textContentType(.password)
                         .autocorrectionDisabled()
+                        #if os(iOS)
                         .textInputAutocapitalization(.never)
+                        #endif
                         .padding(10)
-                        .background(Color(.systemGray6))
+                        .background(Color.systemGray6)
                         .cornerRadius(8)
                     
                     Text("Optional: Set a Hugging Face token for better download reliability and higher rate limits. Get one at huggingface.co/settings/tokens")

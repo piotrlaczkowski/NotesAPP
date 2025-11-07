@@ -83,7 +83,7 @@ struct NoteRowView: View {
         .padding(.horizontal, 12)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
+                .fill(Color.secondarySystemBackground)
         )
     }
 }

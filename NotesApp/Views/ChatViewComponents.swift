@@ -7,11 +7,11 @@ struct AnimatedGradientBackground: View {
     var body: some View {
         LinearGradient(
             gradient: Gradient(colors: [
-                Color(.systemBackground),
-                Color(.systemBackground).opacity(0.98),
+                Color.systemBackground,
+                Color.systemBackground.opacity(0.98),
                 Color.blue.opacity(0.03),
                 Color.purple.opacity(0.02),
-                Color(.systemBackground)
+                Color.systemBackground
             ]),
             startPoint: animateGradient ? .topLeading : .bottomTrailing,
             endPoint: animateGradient ? .bottomTrailing : .topLeading
@@ -221,7 +221,9 @@ struct EnhancedInputView: View {
                     TextField("", text: $messageText, axis: .vertical)
                         .focused(isTextFieldFocused)
                         .lineLimit(1...6)
+                        #if os(iOS)
                         .textInputAutocapitalization(.sentences)
+                        #endif
                         .autocorrectionDisabled(false)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)

@@ -6,7 +6,6 @@ actor RAGService {
     
     private let searchService = SearchService.shared
     private let noteRepository = NoteRepository.shared
-    private let llmManager = LLMManager.shared
     private let relevanceDetector = RAGRelevanceDetector.shared
     
     private init() {}
@@ -60,17 +59,22 @@ actor RAGService {
         // Check if RAG is needed
         let (needsRAG, relevantNotes, _) = await relevanceDetector.shouldUseRAG(query: query)
         
-        guard await llmManager.isModelLoaded else {
+        let isModelLoaded = await MainActor.run {
+            LLMManager.shared.isModelLoaded
+        }
+        guard isModelLoaded else {
             throw LLMError(message: "LLM model not loaded. Please download and load a model in Settings.")
         }
         
         if needsRAG && !relevantNotes.isEmpty {
             // Use RAG with context
             let context = buildContext(from: relevantNotes)
-            return try await llmManager.generateChatResponse(prompt: query, context: context)
+            // LLMManager is @MainActor, so we can call it directly with await
+            return try await LLMManager.shared.generateChatResponse(prompt: query, context: context)
         } else {
             // Generic chat without context
-            return try await llmManager.generateChatResponse(prompt: query, context: nil)
+            // LLMManager is @MainActor, so we can call it directly with await
+            return try await LLMManager.shared.generateChatResponse(prompt: query, context: nil)
         }
     }
     
@@ -82,7 +86,10 @@ actor RAGService {
                     // Check if RAG is needed
                     let (needsRAG, relevantNotes, _) = await relevanceDetector.shouldUseRAG(query: query)
                     
-                    guard await llmManager.isModelLoaded else {
+                    let isModelLoaded = await MainActor.run {
+                        LLMManager.shared.isModelLoaded
+                    }
+                    guard isModelLoaded else {
                         continuation.finish(throwing: LLMError(message: "LLM model not loaded. Please download and load a model in Settings."))
                         return
                     }
@@ -95,7 +102,8 @@ actor RAGService {
                     }
                     
                     // Get streaming response
-                    let stream = await llmManager.generateChatResponseStream(prompt: query, context: context)
+                    // LLMManager is @MainActor, so we can call it directly with await
+                    let stream = await LLMManager.shared.generateChatResponseStream(prompt: query, context: context)
                     
                     for try await chunk in stream {
                         continuation.yield(chunk)

@@ -18,8 +18,8 @@ struct HomeView: View {
                 // Background gradient
                 LinearGradient(
                     colors: [
-                        Color(.systemBackground),
-                        Color(.systemBackground).opacity(0.95)
+                        Color.systemBackground,
+                        Color.systemBackground.opacity(0.95)
                     ],
                     startPoint: .top,
                     endPoint: .bottom
@@ -30,30 +30,30 @@ struct HomeView: View {
                     EmptyStateView()
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 24) {
+                        LazyVStack(spacing: CGFloat.adaptiveSpacingL) {
                             // Header with stats
                             headerSection
-                                .padding(.horizontal, 20)
-                                .padding(.top, 16)
+                                .adaptiveHorizontalPadding()
+                                .padding(.top, CGFloat.adaptiveSpacingM)
                             
                             // Filter sections
                             if hasFilters {
-                                VStack(spacing: 16) {
+                                VStack(spacing: CGFloat.adaptiveSpacingM) {
                                     // Category filter
                                     if hasCategories {
                                         categoryFilterSection
-                                            .padding(.horizontal, 20)
+                                            .adaptiveHorizontalPadding()
                                             .transition(.move(edge: .top).combined(with: .opacity))
                                     }
                                     
                                     // Tag filter
                                     if hasTags {
                                         tagFilterSection
-                                            .padding(.horizontal, 20)
+                                            .adaptiveHorizontalPadding()
                                             .transition(.move(edge: .top).combined(with: .opacity))
                                     }
                                 }
-                                .padding(.bottom, 8)
+                                .padding(.bottom, .spacingS)
                                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showFilters)
                             }
                             
@@ -64,6 +64,8 @@ struct HomeView: View {
                                 notesCarousel
                             }
                         }
+                        .adaptiveFrame()
+                        .frame(maxWidth: .infinity)
                     }
                     .refreshable {
                         await viewModel.refresh()
@@ -72,7 +74,7 @@ struct HomeView: View {
                 
                 if viewModel.isLoading || isSearching {
                     ZStack {
-                        Color(.systemBackground)
+                        Color.systemBackground
                             .opacity(0.8)
                             .ignoresSafeArea()
                         
@@ -93,7 +95,9 @@ struct HomeView: View {
                 }
             }
             .navigationTitle("")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .searchable(text: $searchText, prompt: "Search notes...")
             .overlay(alignment: .topTrailing) {
                 if viewModel.isSyncing {
@@ -203,6 +207,23 @@ struct HomeView: View {
                 AddURLView(viewModel: viewModel)
             }
             .sheet(item: $viewModel.pendingNoteToReview) { note in
+                #if os(macOS)
+                ReviewNoteView(
+                    note: note,
+                    analysis: viewModel.pendingNoteAnalysis ?? NoteAnalysis(
+                        title: note.title,
+                        summary: note.summary,
+                        tags: note.tags,
+                        category: note.category,
+                        whatIsIt: nil,
+                        whyAdvantageous: nil
+                    )
+                )
+                .onDisappear {
+                    // Clear analysis when sheet dismisses
+                    viewModel.pendingNoteAnalysis = nil
+                }
+                #else
                 NavigationStack {
                     ReviewNoteView(
                         note: note,
@@ -220,6 +241,7 @@ struct HomeView: View {
                     // Clear analysis when sheet dismisses
                     viewModel.pendingNoteAnalysis = nil
                 }
+                #endif
             }
             .sheet(item: $selectedNote) { note in
                 // Present immediately without blocking
@@ -464,7 +486,7 @@ struct HomeView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.secondarySystemBackground))
+                .fill(Color.secondarySystemBackground)
                 .opacity(0.6)
         )
     }
@@ -537,18 +559,28 @@ struct HomeView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.secondarySystemBackground))
+                .fill(Color.secondarySystemBackground)
                 .opacity(0.6)
         )
     }
     
     private var notesGrid: some View {
-        LazyVGrid(
-            columns: [
-                GridItem(.flexible(), spacing: 16),
-                GridItem(.flexible(), spacing: 16)
-            ],
-            spacing: 20
+        #if os(macOS)
+        let columns = [
+            GridItem(.flexible(), spacing: 20),
+            GridItem(.flexible(), spacing: 20),
+            GridItem(.flexible(), spacing: 20)
+        ]
+        #else
+        let columns = [
+            GridItem(.flexible(), spacing: 16),
+            GridItem(.flexible(), spacing: 16)
+        ]
+        #endif
+        
+        return LazyVGrid(
+            columns: columns,
+            spacing: CGFloat.adaptiveSpacingL
         ) {
             // Use direct ForEach without enumeration to reduce overhead
             ForEach(filteredNotes, id: \.id) { note in
@@ -570,9 +602,9 @@ struct HomeView: View {
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .padding(.bottom, 32)
+        .adaptiveHorizontalPadding()
+        .padding(.top, .spacingS)
+        .padding(.bottom, CGFloat.adaptiveSpacingXL)
     }
     
     private var notesCarousel: some View {
@@ -601,8 +633,8 @@ struct HomeView: View {
                     }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .adaptiveHorizontalPadding()
+            .padding(.vertical, CGFloat.adaptiveSpacingM)
         }
     }
 }
@@ -635,7 +667,7 @@ struct CategoryFilterChip: View {
                             )
                         } else {
                             LinearGradient(
-                                colors: [Color(.systemGray5), Color(.systemGray5)],
+                                colors: [Color.systemGray5, Color.systemGray5],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )

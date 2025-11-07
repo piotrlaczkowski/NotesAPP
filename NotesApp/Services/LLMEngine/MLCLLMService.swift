@@ -1106,31 +1106,11 @@ class MLCLLMService: LLMService {
             throw LLMError(message: "Model not loaded")
         }
         
-        // Build the prompt with context if provided
-        var fullPrompt = ""
-        
-        if let context = context, !context.isEmpty {
-            fullPrompt = """
-            <|startoftext|><|im_start|>system
-            You are a helpful AI assistant that can answer questions based on the user's notes.
-            
-            Here are relevant notes from the user's collection:
-            \(context)
-            
-            Use this information to answer questions accurately. If the notes don't contain relevant information, say so politely.<|im_end|>
-            <|im_start|>user
-            \(prompt)<|im_end|>
-            <|im_start|>assistant
-            """
-        } else {
-            fullPrompt = """
-            <|startoftext|><|im_start|>system
-            You are a helpful AI assistant.<|im_end|>
-            <|im_start|>user
-            \(prompt)<|im_end|>
-            <|im_start|>assistant
-            """
-        }
+        // TODO: When MLC-LLM is integrated, build and use the full prompt here
+        // For now, the prompt is not used as we're providing simulated responses
+        // The full prompt structure would be:
+        // - With context: system message + context + user prompt
+        // - Without context: system message + user prompt
         
         // TODO: When MLC-LLM is integrated, use actual model inference here
         // For now, provide a helpful response that acknowledges the model is loaded
@@ -1170,30 +1150,11 @@ class MLCLLMService: LLMService {
             }
         }
         
-        // Build the full prompt
-        let fullPrompt: String
-        if let context = context, !context.isEmpty {
-            fullPrompt = """
-            <|startoftext|><|im_start|>system
-            You are a helpful AI assistant that can answer questions based on the user's notes.
-            
-            Here are relevant notes from the user's collection:
-            \(context)
-            
-            Use this information to answer questions accurately. If the notes don't contain relevant information, say so politely.<|im_end|>
-            <|im_start|>user
-            \(prompt)<|im_end|>
-            <|im_start|>assistant
-            """
-        } else {
-            fullPrompt = """
-            <|startoftext|><|im_start|>system
-            You are a helpful AI assistant.<|im_end|>
-            <|im_start|>user
-            \(prompt)<|im_end|>
-            <|im_start|>assistant
-            """
-        }
+        // TODO: When MLC-LLM is integrated, build and use the full prompt here
+        // For now, the prompt is not used as we're providing simulated streaming responses
+        // The full prompt structure would be:
+        // - With context: system message + context + user prompt
+        // - Without context: system message + user prompt
         
         // TODO: When MLC-LLM is integrated, use actual streaming inference
         // For now, simulate streaming by chunking the response

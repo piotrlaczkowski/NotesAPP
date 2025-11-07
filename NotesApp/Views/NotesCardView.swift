@@ -5,8 +5,7 @@ struct NotesCardView: View {
     let onTap: () -> Void
     
     var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 16) {
+        let buttonContent = VStack(alignment: .leading, spacing: 16) {
                 // Header with category and sync status
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -88,14 +87,14 @@ struct NotesCardView: View {
                     }
                 }
             }
-            .padding(20)
+            .padding(cardPadding)
             .background(
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: cardCornerRadius)
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color(.systemBackground),
-                                Color(.systemBackground).opacity(0.98)
+                                Color.systemBackground,
+                                Color.systemBackground.opacity(0.98)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -113,10 +112,10 @@ struct NotesCardView: View {
                     
                     Spacer()
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 24))
+                .clipShape(RoundedRectangle(cornerRadius: cardCornerRadius))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: cardCornerRadius)
                     .strokeBorder(
                         LinearGradient(
                             colors: [
@@ -130,8 +129,36 @@ struct NotesCardView: View {
                         lineWidth: 1
                     )
             )
+        
+        #if os(macOS)
+        return Button {
+            onTap()
+        } label: {
+            buttonContent
         }
         .buttonStyle(CardButtonStyle())
+        #else
+        return Button(action: onTap) {
+            buttonContent
+        }
+        .buttonStyle(CardButtonStyle())
+        #endif
+    }
+    
+    private var cardPadding: CGFloat {
+        #if os(macOS)
+        return 24
+        #else
+        return 20
+        #endif
+    }
+    
+    private var cardCornerRadius: CGFloat {
+        #if os(macOS)
+        return 16
+        #else
+        return 24
+        #endif
     }
     
     private var categoryStripeColor: Color {

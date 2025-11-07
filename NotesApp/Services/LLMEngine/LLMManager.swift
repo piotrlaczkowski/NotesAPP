@@ -15,9 +15,10 @@ class LLMManager: ObservableObject {
         // Load saved model preference asynchronously to avoid blocking init
         Task.detached(priority: .utility) { [weak self] in
             let savedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "LFM2-1.2B"
+            let modelToLoad = savedModel
             await MainActor.run {
-                Task {
-                    await self?.loadModel(savedModel)
+                Task { @MainActor [weak self] in
+                    await self?.loadModel(modelToLoad)
                 }
             }
         }
