@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 // MARK: - Animated Background
 struct AnimatedGradientBackground: View {
@@ -257,6 +260,18 @@ struct EnhancedInputView: View {
                                 onSend()
                             }
                         }
+                        #if os(macOS)
+                        .onKeyPress(.return) {
+                            // On macOS, Command+Enter sends, Enter creates new line
+                            if NSEvent.modifierFlags.contains(.command) {
+                                if canSend {
+                                    onSend()
+                                }
+                                return .handled
+                            }
+                            return .ignored
+                        }
+                        #endif
                 }
                 
                 // Send button

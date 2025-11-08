@@ -12,6 +12,7 @@ struct ReviewNoteView: View {
     @State private var availableCategories: [String] = []
     @State private var editableWhatIsIt: String = ""
     @State private var editableWhyAdvantageous: String = ""
+    @State private var hasInitialized = false
     
     var body: some View {
         #if os(macOS)
@@ -80,7 +81,10 @@ struct ReviewNoteView: View {
             }
         }
         .onAppear {
-            initializeData()
+            if !hasInitialized {
+                initializeData()
+                hasInitialized = true
+            }
         }
         .onSubmit {
             if !viewModel.isSaving {
@@ -624,7 +628,10 @@ struct ReviewNoteView: View {
                 }
             }
             .onAppear {
-                initializeData()
+                if !hasInitialized {
+                    initializeData()
+                    hasInitialized = true
+                }
             }
         }
     }
@@ -632,17 +639,33 @@ struct ReviewNoteView: View {
     
     // MARK: - Helper Methods
     private func initializeData() {
-        // Apply analysis results
-        note.title = analysis.title
-        note.summary = analysis.summary
-        note.tags = analysis.tags
+        // Apply analysis results only if note fields are empty or not set
+        if note.title.isEmpty {
+            note.title = analysis.title
+        }
+        if note.summary.isEmpty {
+            note.summary = analysis.summary
+        }
+        // Merge tags from analysis with existing tags (don't overwrite user-added tags)
+        if note.tags.isEmpty {
+            note.tags = analysis.tags
+        } else {
+            // Merge: add analysis tags that aren't already present
+            let existingTagsSet = Set(note.tags.map { $0.lowercased() })
+            let newTags = analysis.tags.filter { !existingTagsSet.contains($0.lowercased()) }
+            note.tags.append(contentsOf: newTags)
+        }
         if note.category == nil {
             note.category = analysis.category
         }
         
-        // Initialize editable fields from analysis
-        editableWhatIsIt = analysis.whatIsIt ?? ""
-        editableWhyAdvantageous = analysis.whyAdvantageous ?? ""
+        // Initialize editable fields from analysis (only if empty)
+        if editableWhatIsIt.isEmpty {
+            editableWhatIsIt = analysis.whatIsIt ?? ""
+        }
+        if editableWhyAdvantageous.isEmpty {
+            editableWhyAdvantageous = analysis.whyAdvantageous ?? ""
+        }
         
         // Load categories
         Task {
@@ -651,11 +674,12 @@ struct ReviewNoteView: View {
     }
     
     private func updateAnalysis() {
+        // Use note.tags to preserve user modifications
         let updatedAnalysis = NoteAnalysis(
-            title: analysis.title,
-            summary: analysis.summary,
-            tags: analysis.tags,
-            category: analysis.category,
+            title: note.title,
+            summary: note.summary,
+            tags: note.tags, // Use note.tags instead of analysis.tags to preserve user changes
+            category: note.category ?? analysis.category,
             whatIsIt: editableWhatIsIt.isEmpty ? nil : editableWhatIsIt,
             whyAdvantageous: editableWhyAdvantageous.isEmpty ? nil : editableWhyAdvantageous
         )

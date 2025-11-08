@@ -1670,8 +1670,40 @@ class MLCLLMService: LLMService {
             return response
         }
         
-        // Generic response without integration status - more natural
-        return "I'm ready to help! You can ask me questions, and I'll do my best to assist. If you ask about your notes, I'll automatically search through them to find relevant information."
+        // Generic response without context - generate contextual response
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPrompt.isEmpty else {
+            return "I'm ready to help! You can ask me questions, and I'll do my best to assist. If you ask about your notes, I'll automatically search through them to find relevant information."
+        }
+        
+        let lowerPrompt = trimmedPrompt.lowercased()
+        let words = lowerPrompt.components(separatedBy: CharacterSet.whitespaces.union(.punctuationCharacters))
+            .filter { !$0.isEmpty }
+        
+        // More precise matching - check for exact greetings
+        let isGreeting = words.contains("hello") || words.contains("hi") || words.contains("hey") || 
+                        lowerPrompt.hasPrefix("hello") || lowerPrompt.hasPrefix("hi ") || lowerPrompt.hasPrefix("hey ")
+        
+        if isGreeting {
+            return "Hello! I'm your AI assistant. I'm here to help you with questions and can search through your notes when you ask about them. How can I assist you today?"
+        } else if lowerPrompt.contains("what can you do") || (words.contains("help") && words.count <= 3) {
+            return "I can help you in several ways:\n\n• Answer questions about your saved notes when you ask (like 'what did I save about X?')\n• Have general conversations\n• Search through your notes to find relevant information\n\nJust ask me anything, and if you mention your notes, I'll search through them automatically!"
+        } else if words.contains("thank") || words.contains("thanks") {
+            return "You're welcome! I'm here to help anytime. Feel free to ask me anything else."
+        } else if lowerPrompt.contains("how are you") {
+            return "I'm doing well, thank you for asking! I'm ready to help you with your questions or search through your notes. What would you like to know?"
+        } else {
+            // Generate contextual response
+            let keyWords = words.filter { $0.count > 3 && !["what", "when", "where", "which", "whose", "about", "would", "could", "should"].contains($0) }
+            
+            if !keyWords.isEmpty {
+                let mainTopic = keyWords.prefix(2).joined(separator: " ")
+                return "I understand you're asking about '\(mainTopic)'. Let me know if you'd like me to search through your notes for more specific information, or feel free to ask me anything else!"
+            } else {
+                let capitalizedPrompt = trimmedPrompt.prefix(1).capitalized + trimmedPrompt.dropFirst()
+                return "Regarding '\(capitalizedPrompt)': Let me know if you'd like me to search through your notes for more specific information, or feel free to ask me anything else!"
+            }
+        }
     }
     
     /// Generate comprehensive analysis response using full LLM power
@@ -1957,7 +1989,7 @@ class MLCLLMService: LLMService {
         return AsyncThrowingStream { continuation in
             Task {
                 // Generate the full response (placeholder)
-                let fullResponse: String
+                var fullResponse: String
                 if let context = context, !context.isEmpty {
                     let promptLower = prompt.lowercased()
                     
@@ -2025,25 +2057,48 @@ class MLCLLMService: LLMService {
                     }
                 } else {
                     // Generic chat response - more natural and conversational
-                    let lowerPrompt = prompt.lowercased()
-                    if lowerPrompt.contains("hello") || lowerPrompt.contains("hi") || lowerPrompt.contains("hey") {
+                    let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmedPrompt.isEmpty else {
+                        fullResponse = "I'm ready to help! You can ask me questions, and I'll do my best to assist. If you ask about your notes, I'll automatically search through them to find relevant information."
+                        return
+                    }
+                    
+                    let lowerPrompt = trimmedPrompt.lowercased()
+                    let words = lowerPrompt.components(separatedBy: CharacterSet.whitespaces.union(.punctuationCharacters))
+                        .filter { !$0.isEmpty }
+                    
+                    // More precise matching - check for exact greetings, not just substring matches
+                    let isGreeting = words.contains("hello") || words.contains("hi") || words.contains("hey") || 
+                                    lowerPrompt.hasPrefix("hello") || lowerPrompt.hasPrefix("hi ") || lowerPrompt.hasPrefix("hey ")
+                    
+                    if isGreeting {
                         fullResponse = "Hello! I'm your AI assistant. I'm here to help you with questions and can search through your notes when you ask about them. How can I assist you today?"
-                    } else if lowerPrompt.contains("what can you do") || lowerPrompt.contains("help") {
+                    } else if lowerPrompt.contains("what can you do") || (words.contains("help") && words.count <= 3) {
                         fullResponse = "I can help you in several ways:\n\n• Answer questions about your saved notes when you ask (like 'what did I save about X?')\n• Have general conversations\n• Search through your notes to find relevant information\n\nJust ask me anything, and if you mention your notes, I'll search through them automatically!"
-                    } else if lowerPrompt.contains("thank") {
+                    } else if words.contains("thank") || words.contains("thanks") {
                         fullResponse = "You're welcome! I'm here to help anytime. Feel free to ask me anything else."
                     } else if lowerPrompt.contains("how are you") {
                         fullResponse = "I'm doing well, thank you for asking! I'm ready to help you with your questions or search through your notes. What would you like to know?"
                     } else {
-                        // More natural general response
-                        let capitalizedPrompt = prompt.prefix(1).capitalized + prompt.dropFirst()
-                        fullResponse = "I understand your question about '\(capitalizedPrompt)'. Let me know if you'd like me to search through your notes for more specific information, or feel free to ask me anything else!"
+                        // Generate a more contextual response based on the actual query
+                        // Extract key words from the prompt
+                        let keyWords = words.filter { $0.count > 3 && !["what", "when", "where", "which", "whose", "about", "would", "could", "should"].contains($0) }
+                        
+                        if !keyWords.isEmpty {
+                            let mainTopic = keyWords.prefix(2).joined(separator: " ")
+                            fullResponse = "I understand you're asking about '\(mainTopic)'. "
+                        } else {
+                            let capitalizedPrompt = trimmedPrompt.prefix(1).capitalized + trimmedPrompt.dropFirst()
+                            fullResponse = "Regarding '\(capitalizedPrompt)': "
+                        }
+                        
+                        fullResponse += "Let me know if you'd like me to search through your notes for more specific information, or feel free to ask me anything else!"
                     }
                 }
                 
                 // Simulate streaming by sending chunks word by word
-                let words = fullResponse.components(separatedBy: " ")
-                for (index, word) in words.enumerated() {
+                let responseWords = fullResponse.components(separatedBy: " ")
+                for (index, word) in responseWords.enumerated() {
                     let chunk = index == 0 ? word : " \(word)"
                     continuation.yield(chunk)
                     
