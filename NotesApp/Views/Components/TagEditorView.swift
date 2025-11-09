@@ -14,7 +14,10 @@ struct TagEditorView: View {
                         HStack(spacing: 4) {
                             Text(tag)
                             Button {
-                                tags.removeAll { $0 == tag }
+                                // Create a new array to ensure the binding is properly updated
+                                var updatedTags = tags
+                                updatedTags.removeAll { $0 == tag }
+                                tags = updatedTags
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
                                     .font(.caption)
@@ -52,7 +55,10 @@ struct TagEditorView: View {
     private func addTag() {
         let trimmed = newTag.trimmingCharacters(in: .whitespaces)
         if !trimmed.isEmpty && !tags.contains(trimmed) {
-            tags.append(trimmed)
+            // Create a new array to ensure the binding is properly updated
+            var updatedTags = tags
+            updatedTags.append(trimmed)
+            tags = updatedTags
             newTag = ""
             isTagFieldFocused = true
             #if os(iOS)

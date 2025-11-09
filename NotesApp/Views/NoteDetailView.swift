@@ -61,7 +61,12 @@ struct NoteDetailView: View {
                         Text("Tags")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        TagEditorView(tags: $note.tags)
+                        TagEditorView(tags: Binding(
+                            get: { note.tags },
+                            set: { newTags in
+                                note.tags = newTags
+                            }
+                        ))
                     }
                     
                     // Content

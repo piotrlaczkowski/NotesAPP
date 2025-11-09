@@ -83,7 +83,6 @@ struct ReviewNoteView: View {
         .onAppear {
             if !hasInitialized {
                 initializeData()
-                hasInitialized = true
             }
         }
         .onSubmit {
@@ -361,12 +360,23 @@ struct ReviewNoteView: View {
                     .foregroundColor(.primary)
             }
             
-            TagEditorView(tags: $note.tags)
-                .padding(12)
-                .background {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color(NSColor.controlBackgroundColor))
+            TagEditorView(tags: Binding(
+                get: { note.tags },
+                set: { newTags in
+                    note.tags = newTags
+                    userModifiedTags = true
+                    updateAnalysis()
                 }
+            ))
+            .padding(12)
+            .background {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(NSColor.controlBackgroundColor))
+            }
+            .onChange(of: note.tags) { _, _ in
+                userModifiedTags = true
+                updateAnalysis()
+            }
         }
         .padding(20)
         .background {
@@ -571,7 +581,18 @@ struct ReviewNoteView: View {
                 }
                 
                 Section("Tags") {
-                    TagEditorView(tags: $note.tags)
+                    TagEditorView(tags: Binding(
+                        get: { note.tags },
+                        set: { newTags in
+                            note.tags = newTags
+                            userModifiedTags = true
+                            updateAnalysis()
+                        }
+                    ))
+                    .onChange(of: note.tags) { _, _ in
+                        userModifiedTags = true
+                        updateAnalysis()
+                    }
                 }
                 
                 Section("URL") {
@@ -630,7 +651,6 @@ struct ReviewNoteView: View {
             .onAppear {
                 if !hasInitialized {
                     initializeData()
-                    hasInitialized = true
                 }
             }
         }
@@ -639,6 +659,9 @@ struct ReviewNoteView: View {
     
     // MARK: - Helper Methods
     private func initializeData() {
+        // Only initialize once - never overwrite user changes
+        guard !hasInitialized else { return }
+        
         // Apply analysis results only if note fields are empty or not set
         if note.title.isEmpty {
             note.title = analysis.title
@@ -646,15 +669,20 @@ struct ReviewNoteView: View {
         if note.summary.isEmpty {
             note.summary = analysis.summary
         }
-        // Merge tags from analysis with existing tags (don't overwrite user-added tags)
-        if note.tags.isEmpty {
+        
+        // Only set tags from analysis if note has no tags AND user hasn't modified them
+        if note.tags.isEmpty && !userModifiedTags {
             note.tags = analysis.tags
-        } else {
-            // Merge: add analysis tags that aren't already present
+        } else if !note.tags.isEmpty && !userModifiedTags {
+            // Merge: add analysis tags that aren't already present (only on first init)
             let existingTagsSet = Set(note.tags.map { $0.lowercased() })
             let newTags = analysis.tags.filter { !existingTagsSet.contains($0.lowercased()) }
-            note.tags.append(contentsOf: newTags)
+            if !newTags.isEmpty {
+                note.tags.append(contentsOf: newTags)
+            }
         }
+        // If userModifiedTags is true, don't touch tags at all
+        
         if note.category == nil {
             note.category = analysis.category
         }
@@ -671,6 +699,8 @@ struct ReviewNoteView: View {
         Task {
             await loadCategories()
         }
+        
+        hasInitialized = true
     }
     
     private func updateAnalysis() {
@@ -688,6 +718,9 @@ struct ReviewNoteView: View {
     }
     
     private func saveNote() {
+        // Ensure analysis is updated with latest note data before saving
+        updateAnalysis()
+        
         Task {
             await viewModel.approve(note: note)
             if viewModel.errorMessage == nil {

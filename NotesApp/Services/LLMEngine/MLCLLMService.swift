@@ -1693,6 +1693,19 @@ class MLCLLMService: LLMService {
         } else if lowerPrompt.contains("how are you") {
             return "I'm doing well, thank you for asking! I'm ready to help you with your questions or search through your notes. What would you like to know?"
         } else {
+            // Check if this is a JSON extraction request
+            let isExtractionRequest = lowerPrompt.contains("extract") || 
+                                     lowerPrompt.contains("json") ||
+                                     lowerPrompt.contains("metadata") ||
+                                     lowerPrompt.contains("title") && lowerPrompt.contains("description") && lowerPrompt.contains("tags") ||
+                                     lowerPrompt.contains("return only") ||
+                                     lowerPrompt.contains("required json format")
+            
+            if isExtractionRequest {
+                // Generate JSON response for extraction
+                return generateExtractionResponse(prompt: prompt, content: trimmedPrompt)
+            }
+            
             // Generate contextual response
             let keyWords = words.filter { $0.count > 3 && !["what", "when", "where", "which", "whose", "about", "would", "could", "should"].contains($0) }
             
