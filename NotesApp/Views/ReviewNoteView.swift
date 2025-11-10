@@ -13,6 +13,8 @@ struct ReviewNoteView: View {
     @State private var editableWhatIsIt: String = ""
     @State private var editableWhyAdvantageous: String = ""
     @State private var hasInitialized = false
+    @State private var userModifiedTags = false
+    @State private var isUpdatingTags = false  // Prevent recursive updates
     
     var body: some View {
         #if os(macOS)
@@ -361,10 +363,41 @@ struct ReviewNoteView: View {
             }
             
             TagEditorView(tags: Binding(
-                get: { note.tags },
+                get: { 
+                    // Always return current tags
+                    note.tags 
+                },
                 set: { newTags in
+                    // Prevent recursive updates
+                    guard !isUpdatingTags else {
+                        print("ReviewNoteView (macOS): Skipping tag update - already updating")
+                        return
+                    }
+                    
+                    // Debug logging
+                    print("ReviewNoteView (macOS): Binding setter called")
+                    print("  Current tags: \(note.tags)")
+                    print("  New tags: \(newTags)")
+                    print("  User modified tags flag: \(userModifiedTags)")
+                    
+                    // CRITICAL: Always update tags when binding is set (TagEditorView handles preservation)
+                    // The TagEditorView ensures all existing tags are preserved when adding
+                    let oldTags = note.tags
+                    
+                    // Only update if tags actually changed to avoid unnecessary updates
+                    guard newTags != oldTags else {
+                        print("  Tags unchanged, skipping update")
+                        return
+                    }
+                    
+                    // Update tags atomically with guard to prevent recursive calls
+                    isUpdatingTags = true
+                    defer { isUpdatingTags = false }
+                    
                     note.tags = newTags
                     userModifiedTags = true
+                    print("  Tags changed, updating analysis...")
+                    // Update analysis with current tags to preserve them
                     updateAnalysis()
                 }
             ))
@@ -372,10 +405,6 @@ struct ReviewNoteView: View {
             .background {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(Color(NSColor.controlBackgroundColor))
-            }
-            .onChange(of: note.tags) { _, _ in
-                userModifiedTags = true
-                updateAnalysis()
             }
         }
         .padding(20)
@@ -523,136 +552,171 @@ struct ReviewNoteView: View {
     
     // MARK: - iOS View
     #if os(iOS)
-    private var iosView: some View {
-        NavigationStack {
-            Form {
-                Section("Title") {
-                    TextField("Title", text: $note.title)
-                }
-                
-                Section("Category") {
-                    Picker("Category", selection: Binding(
-                        get: { note.category ?? analysis.category },
-                        set: { 
-                            if $0?.isEmpty ?? true {
-                                note.category = nil
-                            } else {
-                                note.category = $0
-                            }
-                        }
-                    )) {
-                        Text("None").tag(String?.none)
-                        
-                        if let analysisCategory = analysis.category, !analysisCategory.isEmpty {
-                            Section("Suggested") {
-                                Text(analysisCategory).tag(analysisCategory as String?)
-                            }
-                        }
-                        
-                        Section("Categories") {
-                            ForEach(availableCategories, id: \.self) { cat in
-                                Text(cat).tag(cat as String?)
-                            }
-                        }
-                    }
-                }
-                
-                Section("Summary") {
-                    TextEditor(text: $note.summary)
-                        .frame(height: 100)
-                }
-                
-                Section("What is this?") {
-                    TextEditor(text: $editableWhatIsIt)
-                        .frame(height: 100)
-                        .font(.subheadline)
-                        .onChange(of: editableWhatIsIt) { _, newValue in
-                            updateAnalysis()
-                        }
-                }
-                
-                Section("Why is this useful?") {
-                    TextEditor(text: $editableWhyAdvantageous)
-                        .frame(height: 100)
-                        .font(.subheadline)
-                        .onChange(of: editableWhyAdvantageous) { _, newValue in
-                            updateAnalysis()
-                        }
-                }
-                
-                Section("Tags") {
-                    TagEditorView(tags: Binding(
-                        get: { note.tags },
-                        set: { newTags in
-                            note.tags = newTags
-                            userModifiedTags = true
-                            updateAnalysis()
-                        }
-                    ))
-                    .onChange(of: note.tags) { _, _ in
-                        userModifiedTags = true
+    private var iosFormContent: some View {
+        Form {
+            Section("Title") {
+                TextField("Title", text: $note.title)
+            }
+            
+            Section("Category") {
+                categoryPicker
+            }
+            
+            Section("Summary") {
+                TextEditor(text: $note.summary)
+                    .frame(height: 100)
+            }
+            
+            Section("What is this?") {
+                TextEditor(text: $editableWhatIsIt)
+                    .frame(height: 100)
+                    .font(.subheadline)
+                    .onChange(of: editableWhatIsIt) { _, newValue in
                         updateAnalysis()
                     }
-                }
-                
-                Section("URL") {
-                    if let url = note.url {
-                        Link(destination: url) {
-                            Text(url.absoluteString)
-                                .lineLimit(2)
-                        }
+            }
+            
+            Section("Why is this useful?") {
+                TextEditor(text: $editableWhyAdvantageous)
+                    .frame(height: 100)
+                    .font(.subheadline)
+                    .onChange(of: editableWhyAdvantageous) { _, newValue in
+                        updateAnalysis()
                     }
+            }
+            
+            Section("Tags") {
+            TagEditorView(tags: Binding(
+                get: { 
+                    // Always return current tags
+                    note.tags 
+                },
+                set: { newTags in
+                    // Prevent recursive updates
+                    guard !isUpdatingTags else {
+                        print("ReviewNoteView (iOS): Skipping tag update - already updating")
+                        return
+                    }
+                    
+                    // Debug logging
+                    print("ReviewNoteView (iOS): Binding setter called")
+                    print("  Current tags: \(note.tags)")
+                    print("  New tags: \(newTags)")
+                    print("  User modified tags flag: \(userModifiedTags)")
+                    
+                    // CRITICAL: Always update tags when binding is set (TagEditorView handles preservation)
+                    // The TagEditorView ensures all existing tags are preserved when adding
+                    let oldTags = note.tags
+                    
+                    // Only update if tags actually changed to avoid unnecessary updates
+                    guard newTags != oldTags else {
+                        print("  Tags unchanged, skipping update")
+                        return
+                    }
+                    
+                    // Update tags atomically with guard to prevent recursive calls
+                    isUpdatingTags = true
+                    defer { isUpdatingTags = false }
+                    
+                    note.tags = newTags
+                    userModifiedTags = true
+                    print("  Tags changed, updating analysis...")
+                    // Update analysis with current tags to preserve them
+                    updateAnalysis()
                 }
-                
-                Section("Content Preview") {
-                    Text(note.content)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(5)
+            ))
+            }
+            
+            Section("URL") {
+                if let url = note.url {
+                    Link(destination: url) {
+                        Text(url.absoluteString)
+                            .lineLimit(2)
+                    }
                 }
             }
-            .navigationTitle("Review Note")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Discard") {
-                        HapticFeedback.selection()
-                        dismiss()
-                    }
+            
+            Section("Content Preview") {
+                Text(note.content)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(5)
+            }
+        }
+    }
+    
+    private var categoryPicker: some View {
+        Picker("Category", selection: Binding(
+            get: { note.category ?? analysis.category },
+            set: { 
+                if $0?.isEmpty ?? true {
+                    note.category = nil
+                } else {
+                    note.category = $0
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        saveNote()
-                    } label: {
-                        HStack(spacing: 6) {
-                            if viewModel.isSaving {
-                                ProgressView()
-                                    .progressViewStyle(.circular)
-                                    .scaleEffect(0.8)
-                            } else {
-                                Image(systemName: "checkmark.circle.fill")
+            }
+        )) {
+            Text("None").tag(String?.none)
+            
+            if let analysisCategory = analysis.category, !analysisCategory.isEmpty {
+                Section("Suggested") {
+                    Text(analysisCategory).tag(analysisCategory as String?)
+                }
+            }
+            
+            Section("Categories") {
+                ForEach(availableCategories, id: \.self) { cat in
+                    Text(cat).tag(cat as String?)
+                }
+            }
+        }
+    }
+    
+    private var iosView: some View {
+        NavigationStack {
+            iosFormContent
+                .navigationTitle("Review Note")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Discard") {
+                            HapticFeedback.selection()
+                            dismiss()
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button {
+                            saveNote()
+                        } label: {
+                            HStack(spacing: 6) {
+                                if viewModel.isSaving {
+                                    ProgressView()
+                                        .progressViewStyle(.circular)
+                                        .scaleEffect(0.8)
+                                } else {
+                                    Image(systemName: "checkmark.circle.fill")
+                                }
+                                Text("Approve")
                             }
-                            Text("Approve")
                         }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(viewModel.isSaving)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.isSaving)
                 }
-            }
-            .alert("Error", isPresented: .constant(viewModel.errorMessage != nil)) {
-                Button("OK") {
-                    viewModel.errorMessage = nil
+                .alert("Error", isPresented: .constant(viewModel.errorMessage != nil)) {
+                    Button("OK") {
+                        viewModel.errorMessage = nil
+                    }
+                } message: {
+                    if let error = viewModel.errorMessage {
+                        Text(error)
+                    }
                 }
-            } message: {
-                if let error = viewModel.errorMessage {
-                    Text(error)
+                .onAppear {
+                    if !hasInitialized {
+                        initializeData()
+                    }
                 }
-            }
-            .onAppear {
-                if !hasInitialized {
-                    initializeData()
-                }
-            }
         }
     }
     #endif
@@ -671,17 +735,27 @@ struct ReviewNoteView: View {
         }
         
         // Only set tags from analysis if note has no tags AND user hasn't modified them
-        if note.tags.isEmpty && !userModifiedTags {
-            note.tags = analysis.tags
-        } else if !note.tags.isEmpty && !userModifiedTags {
-            // Merge: add analysis tags that aren't already present (only on first init)
-            let existingTagsSet = Set(note.tags.map { $0.lowercased() })
-            let newTags = analysis.tags.filter { !existingTagsSet.contains($0.lowercased()) }
-            if !newTags.isEmpty {
-                note.tags.append(contentsOf: newTags)
+        // CRITICAL: Once userModifiedTags is true, NEVER modify tags from analysis
+        // Also prevent updates if we're currently updating tags to avoid conflicts
+        if !isUpdatingTags {
+            if note.tags.isEmpty && !userModifiedTags {
+                isUpdatingTags = true
+                defer { isUpdatingTags = false }
+                note.tags = analysis.tags
+            } else if !note.tags.isEmpty && !userModifiedTags {
+                // Merge: add analysis tags that aren't already present (only on first init)
+                let existingTagsSet = Set(note.tags.map { $0.lowercased() })
+                let newTags = analysis.tags.filter { !existingTagsSet.contains($0.lowercased()) }
+                if !newTags.isEmpty {
+                    isUpdatingTags = true
+                    defer { isUpdatingTags = false }
+                    var mergedTags = note.tags
+                    mergedTags.append(contentsOf: newTags)
+                    note.tags = mergedTags
+                }
             }
         }
-        // If userModifiedTags is true, don't touch tags at all
+        // If userModifiedTags is true, don't touch tags at all - preserve user's tags
         
         if note.category == nil {
             note.category = analysis.category
@@ -705,10 +779,14 @@ struct ReviewNoteView: View {
     
     private func updateAnalysis() {
         // Use note.tags to preserve user modifications
+        // CRITICAL: Always use note.tags (current state) to preserve any user edits
+        // If note.tags is empty but userModifiedTags is true, keep it empty (user cleared them)
+        // Otherwise, use note.tags which contains the current state
+        let tagsToUse = note.tags // Always use current note.tags to preserve user changes
         let updatedAnalysis = NoteAnalysis(
             title: note.title,
             summary: note.summary,
-            tags: note.tags, // Use note.tags instead of analysis.tags to preserve user changes
+            tags: tagsToUse, // Always use current note.tags to preserve user changes
             category: note.category ?? analysis.category,
             whatIsIt: editableWhatIsIt.isEmpty ? nil : editableWhatIsIt,
             whyAdvantageous: editableWhyAdvantageous.isEmpty ? nil : editableWhyAdvantageous

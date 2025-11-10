@@ -28,8 +28,53 @@ struct ModelConfig {
             downloadURL: "https://huggingface.co/LiquidAI/LFM2-1.2B/resolve/main/LFM2-1.2B.gguf",
             localPath: "LFM2-1.2B.gguf",
             repoPath: "LiquidAI/LFM2-1.2B"
+        ),
+        ModelConfig(
+            name: "LFM2-1.2B-Extract",
+            size: "1.2B",
+            downloadURL: "https://huggingface.co/LiquidAI/LFM2-1.2B-Extract/resolve/main/LFM2-1.2B-Extract.gguf",
+            localPath: "LFM2-1.2B-Extract.gguf",
+            repoPath: "LiquidAI/LFM2-1.2B-Extract"
+        ),
+        ModelConfig(
+            name: "LFM2-1.2B-RAG",
+            size: "1.2B",
+            downloadURL: "https://huggingface.co/LiquidAI/LFM2-1.2B-RAG/resolve/main/LFM2-1.2B-RAG.gguf",
+            localPath: "LFM2-1.2B-RAG.gguf",
+            repoPath: "LiquidAI/LFM2-1.2B-RAG"
         )
     ]
+    
+    /// Get the recommended model for a specific task
+    static func recommendedModel(for task: ModelTask) -> String {
+        switch task {
+        case .extraction:
+            return "LFM2-1.2B-Extract"
+        case .chat, .rag:
+            return "LFM2-1.2B-RAG"
+        case .general:
+            return "LFM2-1.2B"
+        }
+    }
+    
+    /// Check if a model is specialized for a task
+    static func isSpecializedModel(_ modelName: String, for task: ModelTask) -> Bool {
+        switch task {
+        case .extraction:
+            return modelName.contains("Extract")
+        case .chat, .rag:
+            return modelName.contains("RAG")
+        case .general:
+            return !modelName.contains("Extract") && !modelName.contains("RAG")
+        }
+    }
+    
+    enum ModelTask {
+        case extraction  // For extracting metadata from URLs/content
+        case chat       // For general chat
+        case rag        // For RAG-based chat with context
+        case general    // General purpose
+    }
     
     // Alternative URLs to try if primary fails (common GGUF filename patterns)
     static func alternativeURLs(for model: String) -> [String] {

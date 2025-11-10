@@ -73,63 +73,90 @@ struct SettingsView: View {
                             .font(.headline)
                     }
                     
-                    Section("LLM Model") {
-                        Picker("Model", selection: $selectedModel) {
-                            ForEach(viewModel.availableModels, id: \.self) { model in
-                                Text(model).tag(model)
-                            }
-                        }
-                        .onChange(of: selectedModel) { _, newValue in
-                            Task {
-                                await viewModel.selectModel(newValue)
-                            }
-                        }
-                        
-                        if let status = viewModel.modelStatus {
+                    Section("LLM Models") {
+                        // Show specialized models status
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Specialized models are automatically downloaded and used:")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            // Extraction Model Status
                             HStack {
-                                Text("Status:")
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .foregroundColor(.blue)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("LFM2-1.2B-Extract")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                    Text("Used for extracting metadata from URLs")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                                 Spacer()
-                                Text(status)
-                                    .foregroundColor(status.contains("✓") ? .green : (status.contains("✗") ? .red : .secondary))
-                                    .font(.subheadline)
+                                if viewModel.extractionModelStatus == "✓ Downloaded" {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                } else if viewModel.extractionModelStatus == "Downloading..." {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                } else {
+                                    Image(systemName: "arrow.down.circle")
+                                        .foregroundColor(.orange)
+                                }
                             }
+                            .padding(.vertical, 4)
+                            
+                            // RAG Model Status
+                            HStack {
+                                Image(systemName: "message.circle.fill")
+                                    .foregroundColor(.green)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("LFM2-1.2B-RAG")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                    Text("Used for chat and RAG tasks")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                if viewModel.ragModelStatus == "✓ Downloaded" {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                } else if viewModel.ragModelStatus == "Downloading..." {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                } else {
+                                    Image(systemName: "arrow.down.circle")
+                                        .foregroundColor(.orange)
+                                }
+                            }
+                            .padding(.vertical, 4)
                         }
+                        .padding(.vertical, 4)
                         
                         if viewModel.isDownloading {
                             VStack(alignment: .leading, spacing: 8) {
                                 ProgressView(value: viewModel.downloadProgress)
-                                Text("Downloading... \(Int(viewModel.downloadProgress * 100))%")
+                                Text("Downloading models... \(Int(viewModel.downloadProgress * 100))%")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
-                                Text("This may take several minutes depending on model size and connection speed.")
+                                Text("This may take several minutes depending on connection speed.")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
-                        } else if viewModel.needsDownload {
-                            Button {
-                                Task {
-                                    await viewModel.downloadModel(selectedModel)
-                                }
-                            } label: {
-                                HStack {
-                                    Image(systemName: "arrow.down.circle.fill")
-                                    Text("Download Model")
-                                }
+                        }
+                        
+                        Button {
+                            Task {
+                                await viewModel.ensureSpecializedModels()
                             }
-                            
-                            // Show model size info
-                            if let config = ModelConfig.config(for: selectedModel) {
-                                Text("Size: \(config.size)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        } else {
-                            Button("Reload Model") {
-                                Task {
-                                    await viewModel.selectModel(selectedModel)
-                                }
+                        } label: {
+                            HStack {
+                                Image(systemName: "arrow.clockwise.circle.fill")
+                                Text("Check & Download Models")
                             }
                         }
+                        .disabled(viewModel.isDownloading)
                         
                         Divider()
                             .padding(.vertical, 8)
@@ -191,6 +218,12 @@ struct SettingsView: View {
                         }
                     }
                     
+                    Section("Testing") {
+                        NavigationLink("URL Extraction Tests") {
+                            URLExtractionTestView()
+                        }
+                    }
+                    
                     Section("About") {
                         HStack {
                             Text("Version")
@@ -206,6 +239,11 @@ struct SettingsView: View {
         .task {
             await viewModel.loadModelStatus()
             await statusViewModel.refreshAll()
+            // Only auto-download if LLMManager isn't already loading and viewModel isn't downloading
+            // (LLMManager will handle initial downloads on app launch)
+            if !LLMManager.shared.isLoading && !viewModel.isDownloading {
+                await viewModel.ensureSpecializedModels()
+            }
         }
         .onChange(of: selectedModel) { _, _ in
             Task {
@@ -269,8 +307,10 @@ struct SettingsView: View {
 
 @MainActor
 class SettingsViewModel: ObservableObject {
-    @Published var availableModels = ["LFM2-350M", "LFM2-700M", "LFM2-1.2B"]
+    @Published var availableModels = ModelConfig.availableModels.map { $0.name }
     @Published var modelStatus: String?
+    @Published var extractionModelStatus: String = "Checking..."
+    @Published var ragModelStatus: String = "Checking..."
     @Published var isDownloading = false
     @Published var downloadProgress: Double = 0
     @Published var needsDownload = false
@@ -281,21 +321,26 @@ class SettingsViewModel: ObservableObject {
     private let llmManager = LLMManager.shared
     
     func loadModelStatus() async {
-        let currentModel = await Task.detached(priority: .utility) {
-            UserDefaults.standard.string(forKey: "selectedModel") ?? "LFM2-1.2B"
-        }.value
-        let isDownloaded = await modelDownloader.isModelDownloaded(currentModel)
+        // Check specialized models status
+        let extractionModel = ModelConfig.recommendedModel(for: .extraction)
+        let ragModel = ModelConfig.recommendedModel(for: .rag)
         
-        if isDownloaded {
-            if llmManager.isModelLoaded && llmManager.currentModel == currentModel {
-                modelStatus = "✓ Loaded and Ready"
-                needsDownload = false
+        let extractionDownloaded = await modelDownloader.isModelDownloaded(extractionModel)
+        let ragDownloaded = await modelDownloader.isModelDownloaded(ragModel)
+        
+        extractionModelStatus = extractionDownloaded ? "✓ Downloaded" : "Not downloaded"
+        ragModelStatus = ragDownloaded ? "✓ Downloaded" : "Not downloaded"
+        
+        // Overall status
+        if extractionDownloaded && ragDownloaded {
+            if llmManager.isModelLoaded {
+                modelStatus = "✓ Models loaded and ready"
             } else {
-                modelStatus = "✓ Downloaded (Not Loaded)"
-                needsDownload = false
+                modelStatus = "✓ Models downloaded"
             }
+            needsDownload = false
         } else {
-            modelStatus = "✗ Not Downloaded"
+            modelStatus = "Downloading required models..."
             needsDownload = true
         }
     }
@@ -378,6 +423,134 @@ class SettingsViewModel: ObservableObject {
             
             await loadModelStatus()
         }
+    }
+    
+    /// Ensure specialized models are downloaded
+    func ensureSpecializedModels() async {
+        // Prevent concurrent calls
+        guard !isDownloading else {
+            print("SettingsViewModel: ensureSpecializedModels already in progress, skipping...")
+            return
+        }
+        
+        // Check status first
+        await loadModelStatus()
+        
+        // If both models are already downloaded, skip
+        if extractionModelStatus == "✓ Downloaded" && ragModelStatus == "✓ Downloaded" {
+            return
+        }
+        
+        isDownloading = true
+        downloadProgress = 0.0
+        errorMessage = nil
+        showError = false
+        
+        defer {
+            isDownloading = false
+        }
+        
+        let extractionModel = ModelConfig.recommendedModel(for: .extraction)
+        let ragModel = ModelConfig.recommendedModel(for: .rag)
+        
+        var totalModels = 0
+        var downloadedModels = 0
+        
+        // Check and download extraction model
+        if !(await modelDownloader.isModelDownloaded(extractionModel)) {
+            totalModels += 1
+            extractionModelStatus = "Downloading..."
+            do {
+                try await modelDownloader.download(model: extractionModel) { progress in
+                    Task { @MainActor in
+                        self.downloadProgress = (Double(downloadedModels) + progress) / Double(max(1, totalModels))
+                    }
+                }
+                downloadedModels += 1
+                extractionModelStatus = "✓ Downloaded"
+                // Load the model after download
+                await llmManager.loadModel(extractionModel)
+            } catch {
+                // Handle "already in progress" gracefully
+                if let error = error as? ModelDownloadError,
+                   case .networkError(let message) = error,
+                   message.contains("already in progress") {
+                    extractionModelStatus = "Waiting for download..."
+                    // Wait for download to complete
+                    var attempts = 0
+                    while !(await modelDownloader.isModelDownloaded(extractionModel)) && attempts < 120 {
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                        attempts += 1
+                    }
+                    if await modelDownloader.isModelDownloaded(extractionModel) {
+                        extractionModelStatus = "✓ Downloaded"
+                        downloadedModels += 1
+                        await llmManager.loadModel(extractionModel)
+                    } else {
+                        extractionModelStatus = "✗ Timeout"
+                        errorMessage = "Download timeout for \(extractionModel)"
+                        showError = true
+                    }
+                } else {
+                    extractionModelStatus = "✗ Failed"
+                    errorMessage = "Failed to download \(extractionModel): \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        } else {
+            extractionModelStatus = "✓ Downloaded"
+        }
+        
+        // Small delay between downloads
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        
+        // Check and download RAG model
+        if !(await modelDownloader.isModelDownloaded(ragModel)) {
+            totalModels += 1
+            ragModelStatus = "Downloading..."
+            do {
+                try await modelDownloader.download(model: ragModel) { progress in
+                    Task { @MainActor in
+                        self.downloadProgress = (Double(downloadedModels) + progress) / Double(max(1, totalModels))
+                    }
+                }
+                downloadedModels += 1
+                ragModelStatus = "✓ Downloaded"
+                // Load the model after download
+                await llmManager.loadModel(ragModel)
+            } catch {
+                // Handle "already in progress" gracefully
+                if let error = error as? ModelDownloadError,
+                   case .networkError(let message) = error,
+                   message.contains("already in progress") {
+                    ragModelStatus = "Waiting for download..."
+                    // Wait for download to complete
+                    var attempts = 0
+                    while !(await modelDownloader.isModelDownloaded(ragModel)) && attempts < 120 {
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                        attempts += 1
+                    }
+                    if await modelDownloader.isModelDownloaded(ragModel) {
+                        ragModelStatus = "✓ Downloaded"
+                        downloadedModels += 1
+                        await llmManager.loadModel(ragModel)
+                    } else {
+                        ragModelStatus = "✗ Timeout"
+                        errorMessage = "Download timeout for \(ragModel)"
+                        showError = true
+                    }
+                } else {
+                    ragModelStatus = "✗ Failed"
+                    errorMessage = "Failed to download \(ragModel): \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        } else {
+            ragModelStatus = "✓ Downloaded"
+        }
+        
+        downloadProgress = 1.0
+        await loadModelStatus()
     }
 }
 

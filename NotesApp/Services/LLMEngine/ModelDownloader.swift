@@ -30,6 +30,7 @@ actor ModelDownloader {
     private let modelsDirectory: URL
     private let session: URLSession
     private var activeDownloads: [String: URLSessionDownloadTask] = [:]
+    private var discoveryInProgress: Set<String> = []
     
     private init() {
         let paths = fileManager.urls(for: .documentDirectory, in: .userDomainMask)
@@ -89,10 +90,58 @@ actor ModelDownloader {
             }
         }
         
-        // Prevent concurrent downloads of the same model
+        // Check if download is already in progress - wait for it instead of erroring
         if activeDownloads[model] != nil {
-            print("ModelDownloader: Download already in progress for \(model), skipping")
-            throw ModelDownloadError.networkError("Download already in progress for this model")
+            print("ModelDownloader: Download already in progress for \(model), waiting for completion...")
+            // Wait for the existing download to complete
+            while activeDownloads[model] != nil {
+                try? await Task.sleep(nanoseconds: 500_000_000) // Wait 0.5 seconds
+            }
+            // Check if download completed successfully
+            if fileManager.fileExists(atPath: destinationURL.path),
+               let attributes = try? fileManager.attributesOfItem(atPath: destinationURL.path),
+               let fileSize = attributes[.size] as? Int64,
+               fileSize > 1000 {
+                print("ModelDownloader: Model \(model) was downloaded by concurrent request")
+                await MainActor.run {
+                    progress(1.0)
+                }
+                return
+            }
+            // If download failed, continue to start a new one
+            print("ModelDownloader: Previous download failed, starting new download...")
+        }
+        
+        // Check if discovery is already in progress - wait for it
+        if discoveryInProgress.contains(model) {
+            print("ModelDownloader: Discovery already in progress for \(model), waiting...")
+            while discoveryInProgress.contains(model) {
+                try? await Task.sleep(nanoseconds: 500_000_000) // Wait 0.5 seconds
+            }
+            // After discovery completes, check if download started
+            if activeDownloads[model] != nil {
+                print("ModelDownloader: Download started by concurrent request, waiting...")
+                while activeDownloads[model] != nil {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                }
+                // Check if download completed
+                if fileManager.fileExists(atPath: destinationURL.path),
+                   let attributes = try? fileManager.attributesOfItem(atPath: destinationURL.path),
+                   let fileSize = attributes[.size] as? Int64,
+                   fileSize > 1000 {
+                    print("ModelDownloader: Model \(model) was downloaded by concurrent request")
+                    await MainActor.run {
+                        progress(1.0)
+                    }
+                    return
+                }
+            }
+        }
+        
+        // Mark discovery as in progress BEFORE starting
+        discoveryInProgress.insert(model)
+        defer {
+            discoveryInProgress.remove(model)
         }
         
         // First, try to discover the actual GGUF file name using Hugging Face API
@@ -274,8 +323,25 @@ actor ModelDownloader {
                         print("ModelDownloader: Note: Could not remove temp file (may be auto-cleaned): \(error.localizedDescription)")
                     }
                     
-                    print("ModelDownloader: ✓✓✓ Successfully saved model to \(destinationURL.path)")
-                    print("ModelDownloader: File exists check: \(fileManager.fileExists(atPath: destinationURL.path))")
+                    // Final verification: ensure file exists and has valid size
+                    guard fileManager.fileExists(atPath: destinationURL.path) else {
+                        let error = NSError(domain: "ModelDownloader", code: -1, userInfo: [NSLocalizedDescriptionKey: "File verification failed - destination file not found after copy"])
+                        activeDownloads.removeValue(forKey: model)
+                        throw ModelDownloadError.fileSystemError(error)
+                    }
+                    
+                    // Verify final file size
+                    if let finalAttributes = try? fileManager.attributesOfItem(atPath: destinationURL.path),
+                       let finalSize = finalAttributes[.size] as? Int64 {
+                        guard finalSize > 1000 else {
+                            let error = NSError(domain: "ModelDownloader", code: -1, userInfo: [NSLocalizedDescriptionKey: "Downloaded file is too small (\(finalSize) bytes), download may have failed"])
+                            activeDownloads.removeValue(forKey: model)
+                            throw ModelDownloadError.fileSystemError(error)
+                        }
+                        print("ModelDownloader: ✓✓✓ Successfully saved model to \(destinationURL.path) (\(finalSize) bytes)")
+                    } else {
+                        print("ModelDownloader: ✓✓✓ Successfully saved model to \(destinationURL.path) (size verification skipped)")
+                    }
                     
                     // NOW we can invalidate the session (file is safely copied)
                     progressSession.finishTasksAndInvalidate()
@@ -354,7 +420,19 @@ actor ModelDownloader {
         }
         
         let path = modelsDirectory.appendingPathComponent(config.localPath)
-        return fileManager.fileExists(atPath: path.path)
+        guard fileManager.fileExists(atPath: path.path) else {
+            return false
+        }
+        
+        // Verify file size to ensure it's not corrupted or incomplete
+        if let attributes = try? fileManager.attributesOfItem(atPath: path.path),
+           let fileSize = attributes[.size] as? Int64,
+           fileSize > 1000 { // At least 1KB (models are large)
+            return true
+        }
+        
+        // File exists but is too small or can't read size - consider it not downloaded
+        return false
     }
     
     /// Discover actual GGUF files in Hugging Face repository using their API
