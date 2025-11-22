@@ -73,109 +73,129 @@ struct SettingsView: View {
                             .font(.headline)
                     }
                     
-                    Section("LLM Models") {
-                        // Show specialized models status
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Specialized models are automatically downloaded and used:")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                    Section("AI Provider") {
+                        Toggle("Use Gemini API", isOn: $viewModel.useGemini)
+                            .onChange(of: viewModel.useGemini) { _, _ in
+                                viewModel.updateGeminiConfig()
+                            }
+                        
+                        if viewModel.useGemini {
+                            SecureField("Gemini API Key", text: $viewModel.geminiApiKey)
+                                .textContentType(.password)
+                                .onChange(of: viewModel.geminiApiKey) { _, _ in
+                                    viewModel.updateGeminiConfig()
+                                }
                             
-                            // Extraction Model Status
-                            HStack {
-                                Image(systemName: "arrow.down.circle.fill")
-                                    .foregroundColor(.blue)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("LFM2-1.2B-Extract")
-                                        .font(.subheadline)
-                                        .fontWeight(.semibold)
-                                    Text("Used for extracting metadata from URLs")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                if viewModel.extractionModelStatus == "✓ Downloaded" {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.green)
-                                } else if viewModel.extractionModelStatus == "Downloading..." {
-                                    ProgressView()
-                                        .scaleEffect(0.8)
-                                } else {
-                                    Image(systemName: "arrow.down.circle")
-                                        .foregroundColor(.orange)
-                                }
-                            }
-                            .padding(.vertical, 4)
-                            
-                            // RAG Model Status
-                            HStack {
-                                Image(systemName: "message.circle.fill")
-                                    .foregroundColor(.green)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("LFM2-1.2B-RAG")
-                                        .font(.subheadline)
-                                        .fontWeight(.semibold)
-                                    Text("Used for chat and RAG tasks")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                if viewModel.ragModelStatus == "✓ Downloaded" {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.green)
-                                } else if viewModel.ragModelStatus == "Downloading..." {
-                                    ProgressView()
-                                        .scaleEffect(0.8)
-                                } else {
-                                    Image(systemName: "arrow.down.circle")
-                                        .foregroundColor(.orange)
-                                }
-                            }
-                            .padding(.vertical, 4)
+                            Link("Get API Key", destination: URL(string: "https://aistudio.google.com/app/apikey")!)
+                                .font(.caption)
                         }
-                        .padding(.vertical, 4)
-                        
-                        if viewModel.isDownloading {
-                            VStack(alignment: .leading, spacing: 8) {
-                                ProgressView(value: viewModel.downloadProgress)
-                                Text("Downloading models... \(Int(viewModel.downloadProgress * 100))%")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Text("This may take several minutes depending on connection speed.")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        
-                        Button {
-                            Task {
-                                await viewModel.ensureSpecializedModels()
-                            }
-                        } label: {
-                            HStack {
-                                Image(systemName: "arrow.clockwise.circle.fill")
-                                Text("Check & Download Models")
-                            }
-                        }
-                        .disabled(viewModel.isDownloading)
-                        
-                        Divider()
-                            .padding(.vertical, 8)
-                        
-                        // Hugging Face Token (Optional)
-                        HuggingFaceTokenView()
                     }
-                    .alert("Download Error", isPresented: $viewModel.showError) {
-                        Button("OK") {
-                            viewModel.showError = false
-                        }
-                        Button("Retry") {
-                            Task {
-                                await viewModel.downloadModel(selectedModel)
+                    
+                    if !viewModel.useGemini {
+                        Section("Local LLM Models") {
+                            // Show specialized models status
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Specialized models are automatically downloaded and used:")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                
+                                // Extraction Model Status
+                                HStack {
+                                    Image(systemName: "arrow.down.circle.fill")
+                                        .foregroundColor(.blue)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("LFM2-1.2B-Extract")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                        Text("Used for extracting metadata from URLs")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                    if viewModel.extractionModelStatus == "✓ Downloaded" {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.green)
+                                    } else if viewModel.extractionModelStatus == "Downloading..." {
+                                        ProgressView()
+                                            .scaleEffect(0.8)
+                                    } else {
+                                        Image(systemName: "arrow.down.circle")
+                                            .foregroundColor(.orange)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                                
+                                // RAG Model Status
+                                HStack {
+                                    Image(systemName: "message.circle.fill")
+                                        .foregroundColor(.green)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("LFM2-1.2B-RAG")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                        Text("Used for chat and RAG tasks")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                    if viewModel.ragModelStatus == "✓ Downloaded" {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.green)
+                                    } else if viewModel.ragModelStatus == "Downloading..." {
+                                        ProgressView()
+                                            .scaleEffect(0.8)
+                                    } else {
+                                        Image(systemName: "arrow.down.circle")
+                                            .foregroundColor(.orange)
+                                    }
+                                }
+                                .padding(.vertical, 4)
                             }
+                            .padding(.vertical, 4)
+                            
+                            if viewModel.isDownloading {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ProgressView(value: viewModel.downloadProgress)
+                                    Text("Downloading models... \(Int(viewModel.downloadProgress * 100))%")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text("This may take several minutes depending on connection speed.")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            
+                            Button {
+                                Task {
+                                    await viewModel.ensureSpecializedModels()
+                                }
+                            } label: {
+                                HStack {
+                                    Image(systemName: "arrow.clockwise.circle.fill")
+                                    Text("Check & Download Models")
+                                }
+                            }
+                            .disabled(viewModel.isDownloading)
+                            
+                            Divider()
+                                .padding(.vertical, 8)
+                            
+                            // Hugging Face Token (Optional)
+                            HuggingFaceTokenView()
                         }
-                    } message: {
-                        if let error = viewModel.errorMessage {
-                            Text(error)
+                        .alert("Download Error", isPresented: $viewModel.showError) {
+                            Button("OK") {
+                                viewModel.showError = false
+                            }
+                            Button("Retry") {
+                                Task {
+                                    await viewModel.downloadModel(selectedModel)
+                                }
+                            }
+                        } message: {
+                            if let error = viewModel.errorMessage {
+                                Text(error)
+                            }
                         }
                     }
                     
@@ -317,8 +337,28 @@ class SettingsViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var showError = false
     
+    @Published var useGemini: Bool {
+        didSet {
+            UserDefaults.standard.set(useGemini, forKey: "useGemini")
+        }
+    }
+    @Published var geminiApiKey: String {
+        didSet {
+            UserDefaults.standard.set(geminiApiKey, forKey: "geminiApiKey")
+        }
+    }
+    
     private let modelDownloader = ModelDownloader.shared
     private let llmManager = LLMManager.shared
+    
+    init() {
+        self.useGemini = UserDefaults.standard.bool(forKey: "useGemini")
+        self.geminiApiKey = UserDefaults.standard.string(forKey: "geminiApiKey") ?? ""
+    }
+    
+    func updateGeminiConfig() {
+        llmManager.refreshGeminiConfig()
+    }
     
     func loadModelStatus() async {
         // Check specialized models status

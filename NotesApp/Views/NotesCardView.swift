@@ -201,7 +201,8 @@ struct CardButtonStyle: ButtonStyle {
     }
 }
 
-struct CategoryBadge: View {
+// MARK: - Supporting Views
+private struct CategoryBadge: View {
     let category: String
     
     var body: some View {
@@ -244,5 +245,29 @@ struct CategoryBadge: View {
         default:
             return .gray
         }
+    }
+}
+
+private struct SyncStatusBadge: View {
+    let status: SyncStatus
+    
+    var body: some View {
+        Group {
+            switch status {
+            case .synced:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+            case .pending:
+                Image(systemName: "clock.fill")
+                    .foregroundColor(.orange)
+            case .conflict:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.red)
+            case .error:
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.red)
+            }
+        }
+        .font(.caption)
     }
 }

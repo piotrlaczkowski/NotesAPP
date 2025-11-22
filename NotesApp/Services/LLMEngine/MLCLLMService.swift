@@ -17,91 +17,48 @@ class MLCLLMService: LLMService {
             throw LLMError(message: "Model not loaded")
         }
         
-        // Step 1: Intelligently detect content type and characteristics
-        let contentType = detectContentType(content: content, metadata: metadata)
-        let contentCharacteristics = analyzeContentCharacteristics(content: content, metadata: metadata)
-        
-        // Step 2: Prepare optimized content for analysis (include more content for better LLM analysis)
-        let optimizedContent = prepareOptimizedContent(
-            content: content,
-            contentType: contentType,
-            characteristics: contentCharacteristics
-        )
-        
-        // Step 3: Build comprehensive context for LLM with ALL available information
-        let comprehensiveContext = buildComprehensiveContext(
-            content: optimizedContent,
-            fullContent: content, // Include full content for complete context
-            metadata: metadata,
-            contentType: contentType,
-            characteristics: contentCharacteristics
-        )
-        
-        // Step 4: Use LLM with comprehensive prompt to analyze everything at once
-        let comprehensivePrompt = """
-        You are an expert content analyst. Analyze the following content thoroughly and provide a complete analysis.
-        
-        Based on the full context provided, extract and formulate:
-        
-        1. SUMMARY (2-3 sentences, max 300 characters):
-           - Provide a concise, informative summary focusing on main points, key findings, and essential information
-           - Be specific and avoid generic statements
-           - Highlight the most important aspects
-        
-        2. WHAT IS IT (1-2 sentences, max 150 characters):
-           - Describe what this resource is
-           - Be specific about the type of content and its main purpose
-           - Use clear, descriptive language
-        
-        3. WHY IS IT IMPORTANT/USEFUL (detailed explanation, max 400 characters):
-           - CRITICAL: Extract ACTUAL, SPECIFIC value from the content. Do NOT use generic statements.
-           - FORBIDDEN generic phrases (DO NOT USE): "presents novel approach", "innovative solution", "practical and applicable", "comprehensive resource", "state-of-the-art", "cutting-edge", "valuable information"
-           - REQUIRED: Extract REAL, CONCRETE value such as:
-             * Specific metrics: "97% storage savings", "10x faster inference", "runs on edge devices with 2GB RAM"
-             * Actual problems solved: "eliminates the need for cloud API calls", "enables offline document processing", "reduces model size from 7B to 1.2B parameters"
-             * Real use cases: "ideal for mobile apps requiring privacy", "enables real-time translation without internet", "supports batch processing of 1000+ documents"
-             * Measurable benefits: "reduces deployment costs by 80%", "improves accuracy by 15% over baseline", "processes 10x more requests per second"
-             * Specific innovations: "first framework to support WebGPU acceleration", "introduces novel attention mechanism reducing memory by 50%"
-           - If you cannot find specific value, extract the most detailed benefit mentioned in the content, even if it's not quantified
-           - NEVER use vague statements - always be specific about WHAT makes it useful and WHY
-        
-        4. CATEGORY (single word or short phrase):
-           - Classify the content type (e.g., Research Paper, Code Repository, Tutorial, Article, Documentation, etc.)
-        
-        5. KEY TAGS (3-5 relevant tags, comma-separated):
-           - Extract the most relevant tags/keywords that describe this content
-           - Focus on topics, technologies, concepts mentioned
-        
-        Format your response as:
-        SUMMARY: [your summary here]
-        WHAT_IS_IT: [your description here]
-        WHY_IMPORTANT: [your explanation here]
-        CATEGORY: [category name]
-        TAGS: [tag1, tag2, tag3]
-        """
-        
-        // Call LLM with comprehensive prompt and full context
-        let llmResponse: String
-        do {
-            llmResponse = try await generateChatResponse(prompt: comprehensivePrompt, context: comprehensiveContext)
-        } catch {
-            // If LLM fails, fall back to individual analysis
-            return performFallbackAnalysis(
-                content: optimizedContent,
-                metadata: metadata,
-                contentType: contentType
-            )
+        // Use URLMetadataExtractor logic (aligned with tests)
+        if let url = metadata?.url {
+            do {
+                let extracted = try await URLMetadataExtractor.extractMetadata(
+                    from: url,
+                    content: content,
+                    metadata: metadata,
+                    llmService: self
+                )
+                
+                // Use extracted fields directly, with better fallbacks
+                let finalSummary = extracted.summary ?? metadata?.openGraphDescription ?? metadata?.metaDescription ?? "No summary available"
+                let finalWhatIsIt = extracted.whatIsIt ?? extracted.summary ?? metadata?.openGraphDescription ?? "Content from \(url.host ?? "web")"
+                let finalWhyAdvantageous = extracted.whyAdvantageous ?? "Reference material worth reviewing"
+                
+                return NoteAnalysis(
+                    title: extracted.title ?? metadata?.pageTitle ?? "Untitled",
+                    summary: finalSummary,
+                    tags: extracted.tags.isEmpty ? (metadata?.keywords ?? []) : extracted.tags,
+                    category: extracted.category ?? "General",
+                    whatIsIt: finalWhatIsIt,
+                    whyAdvantageous: finalWhyAdvantageous
+                )
+            } catch {
+                print("Extraction failed: \(error)")
+                // Fallback below with metadata
+            }
         }
         
-        // Parse LLM response
-        let analysis = parseComprehensiveLLMResponse(
-            llmResponse: llmResponse,
-            content: optimizedContent,
-            metadata: metadata,
-            contentType: contentType
-        )
+        // Fallback to metadata-based analysis if extraction fails or no URL
+        let title = metadata?.pageTitle ?? metadata?.openGraphTitle ?? "Untitled"
+        let summary = metadata?.openGraphDescription ?? metadata?.metaDescription ?? String(content.prefix(200))
+        let tags = metadata?.keywords ?? []
         
-        return analysis
+        return NoteAnalysis(
+            title: title,
+            summary: summary,
+            tags: tags,
+            category: "General",
+            whatIsIt: metadata?.openGraphDescription ?? "Content",
+            whyAdvantageous: "Reference material"
+        )
     }
     
     /// Build comprehensive context with ALL available information for LLM

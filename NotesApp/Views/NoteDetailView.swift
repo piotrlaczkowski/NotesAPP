@@ -6,6 +6,7 @@ struct NoteDetailView: View {
     @StateObject private var viewModel = NoteDetailViewModel()
     @State private var showDeleteConfirmation = false
     @State private var isReady = false
+    @State private var availableCategories: [String] = []
     
     private var toolbarPlacement: ToolbarItemPlacement {
         #if os(iOS)
@@ -44,6 +45,45 @@ struct NoteDetailView: View {
                             .textFieldStyle(.roundedBorder)
                     }
                     
+                    // Category
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Category")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Menu {
+                            ForEach(availableCategories, id: \.self) { category in
+                                Button {
+                                    note.category = category
+                                } label: {
+                                    if note.category == category {
+                                        Label(category, systemImage: "checkmark")
+                                    } else {
+                                        Text(category)
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button("Clear Category", role: .destructive) {
+                                note.category = nil
+                            }
+                        } label: {
+                            HStack {
+                                Text(note.category ?? "Select Category")
+                                    .foregroundColor(note.category == nil ? .secondary : .primary)
+                                Spacer()
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(10)
+                            .background(Color.systemGray6)
+                            .cornerRadius(8)
+                        }
+                    }
+                    
                     // Summary
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Summary")
@@ -54,6 +94,36 @@ struct NoteDetailView: View {
                             .padding(8)
                             .background(Color.systemGray6)
                             .cornerRadius(10)
+                    }
+                    
+                    // What Is It
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("What is it?")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextEditor(text: Binding(
+                            get: { note.whatIsIt ?? "" },
+                            set: { note.whatIsIt = $0.isEmpty ? nil : $0 }
+                        ))
+                        .frame(height: 80)
+                        .padding(8)
+                        .background(Color.systemGray6)
+                        .cornerRadius(10)
+                    }
+                    
+                    // Why Advantageous
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Why is it useful?")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextEditor(text: Binding(
+                            get: { note.whyAdvantageous ?? "" },
+                            set: { note.whyAdvantageous = $0.isEmpty ? nil : $0 }
+                        ))
+                        .frame(height: 80)
+                        .padding(8)
+                        .background(Color.systemGray6)
+                        .cornerRadius(10)
                     }
                     
                     // Tags
@@ -151,6 +221,8 @@ struct NoteDetailView: View {
                 // Mark view as ready after initial render to prevent blocking
                 try? await Task.sleep(nanoseconds: 50_000_000) // 50ms delay
                 isReady = true
+                // Load categories
+                availableCategories = await CategoryManager.shared.getAllCategories()
             }
         }
     }

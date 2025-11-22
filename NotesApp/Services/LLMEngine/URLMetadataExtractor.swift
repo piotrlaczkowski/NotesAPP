@@ -7,13 +7,22 @@ import Foundation
 
 struct URLMetadata: Codable {
     let title: String?
-    let description: String?
+    let summary: String?
     let tags: [String]
+    let category: String?
+    let whatIsIt: String?
+    let whyAdvantageous: String?
     
-    init(title: String? = nil, description: String? = nil, tags: [String] = []) {
+    // Legacy support for description field if needed, but we prefer specific fields
+    var description: String? { summary }
+    
+    init(title: String? = nil, summary: String? = nil, tags: [String] = [], category: String? = nil, whatIsIt: String? = nil, whyAdvantageous: String? = nil) {
         self.title = title
-        self.description = description
+        self.summary = summary
         self.tags = tags
+        self.category = category
+        self.whatIsIt = whatIsIt
+        self.whyAdvantageous = whyAdvantageous
     }
 }
 
@@ -22,45 +31,146 @@ struct URLMetadataExtractor {
     // MARK: - Prompt Builder
     
     static func buildExtractionPrompt(url: URL, content: String, metadata: ContentMetadata?) -> String {
+        // Detect content type for better context
+        let isArxiv = url.absoluteString.contains("arxiv.org")
+        let isGitHub = url.absoluteString.contains("github.com")
+        let isPaper = isArxiv || url.absoluteString.contains("paper") || content.lowercased().contains("abstract")
+        
         var prompt = """
-        Extract metadata from: \(url.absoluteString)
+        You are an expert assistant specialized in reading and extracting information from web content, including research papers, blog posts, documentation pages, and technical articles.
         
-        Return ONLY a JSON object with:
-        - title: Exact project/repository/paper name
-        - description: Brief overview of what it is and what it does. Include why it's useful with specific details if available.
-        - tags: 5-10 relevant keywords
+        You will be given content from a URL. Your job is to:
+        1. Read and understand the text, focusing on the main body
+        2. Use both the page content and URL metadata to understand context
+        3. Produce a concise, high-value analysis that is useful for a technically literate reader
         
-        IMPORTANT: The description field must contain ONLY actual information about the resource, NOT any instructions or prompt text.
+        URL: \(url.absoluteString)
         
-        {
-          "title": "...",
-          "description": "...",
-          "tags": [...]
-        }
         """
         
+        // Add context-specific guidance
+        if isPaper {
+            prompt += """
+            This appears to be a RESEARCH PAPER. Focus on:
+            - The problem being addressed and why it matters
+            - The proposed approach or method (high-level, not implementation details)
+            - Key findings, results, or contributions
+            - How it differs from or improves upon previous work
+            - Practical implications or applications
+            
+            """
+        } else if isGitHub {
+            prompt += """
+            This appears to be a CODE REPOSITORY. Focus on:
+            - What the library/framework/tool does
+            - Key features and capabilities
+            - What problems it solves or what it enables
+            - Who would use it and for what purposes
+            - How it compares to alternatives (if mentioned)
+            
+            """
+        }
+        
+        prompt += """
+        YOUR TASKS:
+        
+        Using the content and context of the page, extract and generate the following:
+        
+        1. TITLE
+           - Extract the exact, official title of the resource
+           - For papers: The paper title
+           - For repos: The repository name
+           - For articles: The article headline
+        
+        2. SUMMARY (CRITICAL - This is NOT just copying the abstract!)
+           - Write a SYNTHESIZED summary in YOUR OWN WORDS (3-5 sentences)
+           - Explain the MAIN IDEAS at a high level
+           - Focus on: What is being proposed/explained, HOW it works conceptually, and WHY it matters
+           - For research papers: Problem → Method → Key findings → Significance
+           - For tools/libraries: What it does → How it helps → Why use it
+           - DO NOT just copy-paste the abstract or introduction
+           - ANALYZE and SYNTHESIZE the information
+        
+        3. WHAT IS IT?
+           - Explain clearly what this resource is (1-2 sentences)
+           - Specify the TYPE: research paper, blog post, documentation, library, framework, tool, etc.
+           - Identify the DOMAIN/TOPIC: e.g., "large language models", "computer vision", "distributed systems"
+           - Mention KEY CONCEPTS or techniques: e.g., "mixture of experts", "attention mechanism", "RAG"
+           - For papers: State the problem being addressed and the proposed approach
+        
+        4. WHY IS THIS USEFUL? (CRITICAL - Be SPECIFIC and CONCRETE!)
+           - Explain the PRACTICAL VALUE in 2-4 points
+           - WHO BENEFITS: Which profiles (ML researchers, data scientists, engineers, specific domain practitioners)?
+           - USE CASES: What can someone DO with these ideas/techniques/results?
+           - CONCRETE SCENARIOS: Give 2-3 realistic examples where this would be directly useful
+           - SPECIFIC ADVANTAGES: What makes this better/different/novel?
+           - Include any mentioned metrics, benchmarks, or performance improvements
+           - AVOID generic phrases like "innovative", "state-of-the-art", "comprehensive"
+           - BE CONCRETE: "Reduces memory usage by 50%", "Enables offline processing", "First to combine X with Y"
+        
+        5. CATEGORY
+           - Choose ONE: Research Paper, Code Repository, Article, Tool, Documentation, Tutorial, Other
+        
+        6. TAGS
+           - Provide 5-8 relevant keywords
+           - Include: domain (e.g., machine-learning, nlp), technologies (e.g., transformers, pytorch), concepts (e.g., attention, rag)
+        
+        OUTPUT FORMAT (JSON only, no markdown, no code blocks):
+        {
+          "title": "exact title here",
+          "summary": "YOUR SYNTHESIZED summary in your own words - NOT a copy of the abstract",
+          "whatIsIt": "clear explanation of what this resource is, its type, domain, and key concepts",
+          "whyAdvantageous": "specific, concrete practical value with use cases, who benefits, and realistic scenarios",
+          "category": "Category Name",
+          "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]
+        }
+        
+        CRITICAL INSTRUCTIONS:
+        - ANALYZE and SYNTHESIZE - do not just extract or copy text
+        - Your summary should demonstrate UNDERSTANDING, not just information retrieval
+        - Be SPECIFIC and CONCRETE in the "whyAdvantageous" field
+        - Focus on PRACTICAL VALUE and REAL-WORLD APPLICATIONS
+        - Avoid marketing language and generic superlatives
+        
+        """
+        
+        // Add metadata context
         if let metadata = metadata {
             let metadataContext = metadata.contextString()
             if !metadataContext.isEmpty {
-                prompt += "\n\nAdditional context:\n\(metadataContext)"
+                prompt += "\nMETADATA:\n\(metadataContext)\n\n"
             }
         }
         
-        // Include more content for deeper analysis (increased from 4000 to 6000)
-        let maxContentLength = 6000
+        // Provide substantial content for analysis
+        let maxContentLength = isPaper ? 8000 : 5000
         let contentToInclude: String
         if content.count > maxContentLength {
-            let beginning = String(content.prefix(maxContentLength * 2 / 3))
-            let end = String(content.suffix(maxContentLength / 3))
-            contentToInclude = "\(beginning)\n\n[... content truncated ...]\n\n\(end)"
+            if isPaper {
+                // For papers: Prioritize abstract, introduction, and conclusion
+                let beginning = String(content.prefix(maxContentLength * 3 / 4))
+                let end = String(content.suffix(maxContentLength / 4))
+                contentToInclude = "\(beginning)\n\n[... middle sections truncated ...]\n\n\(end)"
+            } else {
+                let beginning = String(content.prefix(maxContentLength * 2 / 3))
+                let end = String(content.suffix(maxContentLength / 3))
+                contentToInclude = "\(beginning)\n\n[... content truncated ...]\n\n\(end)"
+            }
         } else {
             contentToInclude = content
         }
         
         prompt += """
-        
-        Content:
+        CONTENT TO ANALYZE:
         \(contentToInclude)
+        
+        Now, analyze this content deeply and produce the JSON output.
+        Remember:
+        - SYNTHESIZE the summary in your own words
+        - Be SPECIFIC about practical value
+        - Focus on UNDERSTANDING and ANALYSIS, not just extraction
+        
+        Return ONLY the JSON object:
         """
         
         return prompt
@@ -69,51 +179,8 @@ struct URLMetadataExtractor {
     // MARK: - JSON Parser
     
     static func parseJSONResponse(_ response: String) -> URLMetadata? {
-        // Try to extract JSON from the response
         var jsonString = response.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        // Remove common prompt prefixes that might leak through (more aggressive)
-        let promptPrefixes = [
-            "You are an expert",
-            "Extract comprehensive metadata",
-            "Extract metadata from:",
-            "CRITICAL:",
-            "CRITICAL INSTRUCTIONS:",
-            "Remember:",
-            "Output exactly",
-            "Return ONLY",
-            "Output ONLY valid JSON",
-            "Do not include",
-            "Do not repeat",
-            "* What the resource is",
-            "What the resource is",
-            "A detailed overview",
-            "A value proposition section",
-            "Return JSON with:",
-            "1. title:",
-            "2. description:",
-            "3. tags:"
-        ]
-        
-        for prefix in promptPrefixes {
-            if let range = jsonString.range(of: prefix, options: .caseInsensitive) {
-                // Find the first { after this prefix
-                if let jsonStart = jsonString.range(of: "{", range: range.upperBound..<jsonString.endIndex) {
-                    jsonString = String(jsonString[jsonStart.lowerBound...])
-                    break
-                }
-            }
-        }
-        
-        // Also check if the entire response starts with prompt text before any JSON
-        if !jsonString.hasPrefix("{") {
-            // Try to find the first { which should be the start of JSON
-            if let jsonStart = jsonString.range(of: "{") {
-                jsonString = String(jsonString[jsonStart.lowerBound...])
-            }
-        }
-        
-        // Remove markdown code blocks if present
         if jsonString.hasPrefix("```json") {
             jsonString = String(jsonString.dropFirst(7))
         } else if jsonString.hasPrefix("```") {
@@ -126,35 +193,38 @@ struct URLMetadataExtractor {
         
         jsonString = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        // Try to find JSON object in the response (look for the first { and matching })
         if let jsonStart = jsonString.range(of: "{"),
-           let jsonEnd = findMatchingBrace(in: jsonString, startIndex: jsonStart.lowerBound) {
-            let jsonRange = jsonStart.lowerBound..<jsonEnd
+           let jsonEnd = jsonString.range(of: "}", options: .backwards) {
+            let jsonRange = jsonStart.lowerBound..<jsonEnd.upperBound
             jsonString = String(jsonString[jsonRange])
         }
         
-        // Clean up any remaining prompt text
-        jsonString = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        // Parse JSON
         guard let data = jsonString.data(using: .utf8) else {
             return nil
         }
         
         do {
             let decoder = JSONDecoder()
-            var metadata = try decoder.decode(URLMetadata.self, from: data)
-            
-            // Clean up description field - remove prompt text that leaked through
-            if let description = metadata.description {
-                let cleaned = cleanDescription(description)
-                metadata = URLMetadata(title: metadata.title, description: cleaned, tags: metadata.tags)
-            }
-            
-            return metadata
+            return try decoder.decode(URLMetadata.self, from: data)
         } catch {
-            print("JSON parsing error: \(error)")
-            print("Attempted to parse: \(jsonString.prefix(500))")
+            // Try manual parsing if Codable fails
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                let title = json["title"] as? String
+                let summary = (json["summary"] as? String) ?? (json["description"] as? String)
+                let tags = json["tags"] as? [String] ?? []
+                let category = json["category"] as? String
+                let whatIsIt = json["whatIsIt"] as? String
+                let whyAdvantageous = json["whyAdvantageous"] as? String
+                
+                return URLMetadata(
+                    title: title,
+                    summary: summary,
+                    tags: tags,
+                    category: category,
+                    whatIsIt: whatIsIt,
+                    whyAdvantageous: whyAdvantageous
+                )
+            }
             return nil
         }
     }
@@ -395,8 +465,11 @@ struct URLMetadataExtractor {
     
     static func parseTextResponse(_ response: String) -> URLMetadata {
         var title: String? = nil
-        var description: String? = nil
+        var summary: String? = nil
         var tags: [String] = []
+        var category: String? = nil
+        var whatIsIt: String? = nil
+        var whyAdvantageous: String? = nil
         
         let lines = response.components(separatedBy: .newlines)
         
@@ -407,41 +480,51 @@ struct URLMetadataExtractor {
                 continue
             }
             
-            // Try to extract title
-            if title == nil {
-                if trimmed.lowercased().hasPrefix("title:") {
-                    title = String(trimmed.dropFirst(6)).trimmingCharacters(in: .whitespaces)
-                } else if trimmed.lowercased().hasPrefix("📘") || trimmed.lowercased().hasPrefix("title") {
-                    title = trimmed.replacingOccurrences(of: "📘", with: "")
-                        .replacingOccurrences(of: "Title:", with: "", options: .caseInsensitive)
-                        .trimmingCharacters(in: .whitespaces)
-                }
+            let lower = trimmed.lowercased()
+            
+            if title == nil && (lower.hasPrefix("title:") || lower.hasPrefix("1. title:")) {
+                title = getValue(from: trimmed, prefix: "title:")
             }
             
-            // Try to extract description
-            if description == nil {
-                if trimmed.lowercased().hasPrefix("description:") {
-                    description = String(trimmed.dropFirst(12)).trimmingCharacters(in: .whitespaces)
-                } else if trimmed.lowercased().hasPrefix("🧠") {
-                    description = trimmed.replacingOccurrences(of: "🧠", with: "").trimmingCharacters(in: .whitespaces)
-                }
+            if summary == nil && (lower.hasPrefix("summary:") || lower.hasPrefix("2. summary:")) {
+                summary = getValue(from: trimmed, prefix: "summary:")
             }
             
-            // Try to extract tags
-            if trimmed.lowercased().hasPrefix("tags:") {
-                let tagsString = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-                tags = tagsString.components(separatedBy: ",")
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
-                    .filter { !$0.isEmpty }
-            } else if trimmed.lowercased().hasPrefix("🏷️") {
-                let tagsString = trimmed.replacingOccurrences(of: "🏷️", with: "").trimmingCharacters(in: .whitespaces)
+            if whatIsIt == nil && (lower.hasPrefix("what is it:") || lower.hasPrefix("3. what is it:")) {
+                whatIsIt = getValue(from: trimmed, prefix: "what is it:")
+            }
+            
+            if whyAdvantageous == nil && (lower.hasPrefix("why it is useful:") || lower.hasPrefix("4. why it is useful:")) {
+                whyAdvantageous = getValue(from: trimmed, prefix: "why it is useful:")
+            }
+            
+            if category == nil && (lower.hasPrefix("category:") || lower.hasPrefix("5. category:")) {
+                category = getValue(from: trimmed, prefix: "category:")
+            }
+            
+            if lower.hasPrefix("tags:") || lower.hasPrefix("6. tags:") {
+                let tagsString = getValue(from: trimmed, prefix: "tags:") ?? ""
                 tags = tagsString.components(separatedBy: ",")
                     .map { $0.trimmingCharacters(in: .whitespaces) }
                     .filter { !$0.isEmpty }
             }
         }
         
-        return URLMetadata(title: title, description: description, tags: tags)
+        return URLMetadata(
+            title: title,
+            summary: summary,
+            tags: tags,
+            category: category,
+            whatIsIt: whatIsIt,
+            whyAdvantageous: whyAdvantageous
+        )
+    }
+    
+    private static func getValue(from line: String, prefix: String) -> String? {
+        if let range = line.range(of: prefix, options: .caseInsensitive) {
+            return String(line[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+        }
+        return nil
     }
     
     // MARK: - Main Extraction Method

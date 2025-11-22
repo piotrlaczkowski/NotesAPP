@@ -87,6 +87,9 @@ class URLExtractionTests: XCTestCase {
                 print("   Actual Title: \(extractedMetadata.title ?? "N/A")")
                 print("   Expected Tags: \(expected.tags.joined(separator: ", "))")
                 print("   Actual Tags: \(extractedMetadata.tags.joined(separator: ", "))")
+                print("   Actual Category: \(extractedMetadata.category ?? "N/A")")
+                print("   Actual WhatIsIt: \(extractedMetadata.whatIsIt ?? "N/A")")
+                print("   Actual WhyAdvantageous: \(extractedMetadata.whyAdvantageous ?? "N/A")")
                 
                 // Check title match
                 if let actualTitle = extractedMetadata.title {
@@ -110,15 +113,21 @@ class URLExtractionTests: XCTestCase {
         URL: \(url.absoluteString)
         
         Instructions:
-        1. Title: Extract the exact project/paper/repo name (be precise)
-        2. Description: Write 2-3 sentences summarizing what it does, then add "Why it is useful: [reason]"
-        3. Tags: Provide 3-8 relevant keywords (technologies, domains, concepts)
+        1. Title: Exact project/paper/repo name
+        2. Summary: Concise summary (2-3 sentences)
+        3. What Is It: Short definition (e.g., "A Python library for...", "A research paper about...")
+        4. Why It Is Useful: Specific benefits/value proposition
+        5. Category: Choose one (Research Paper, Code Repository, Article, Tool, Documentation, Other)
+        6. Tags: 3-8 relevant keywords
         
-        Required JSON format (return ONLY this, no markdown, no code blocks):
+        Required JSON format (return ONLY this):
         {
-          "title": "exact title here",
-          "description": "summary. Why it is useful: reason here",
-          "tags": ["tag1", "tag2", "tag3"]
+          "title": "exact title",
+          "summary": "concise summary",
+          "whatIsIt": "short definition",
+          "whyAdvantageous": "specific benefits",
+          "category": "Category Name",
+          "tags": ["tag1", "tag2"]
         }
         
         """
@@ -143,7 +152,7 @@ class URLExtractionTests: XCTestCase {
         return prompt
     }
     
-    private func parseJSONResponse(_ response: String) -> (title: String?, description: String?, tags: [String])? {
+    private func parseJSONResponse(_ response: String) -> (title: String?, summary: String?, tags: [String], category: String?, whatIsIt: String?, whyAdvantageous: String?)? {
         var jsonString = response.trimmingCharacters(in: .whitespacesAndNewlines)
         
         if jsonString.hasPrefix("```json") {
@@ -171,18 +180,25 @@ class URLExtractionTests: XCTestCase {
         do {
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             let title = json?["title"] as? String
-            let description = json?["description"] as? String
+            let summary = (json?["summary"] as? String) ?? (json?["description"] as? String)
             let tags = json?["tags"] as? [String] ?? []
-            return (title, description, tags)
+            let category = json?["category"] as? String
+            let whatIsIt = json?["whatIsIt"] as? String
+            let whyAdvantageous = json?["whyAdvantageous"] as? String
+            
+            return (title, summary, tags, category, whatIsIt, whyAdvantageous)
         } catch {
             return nil
         }
     }
     
-    private func parseTextResponse(_ response: String) -> (title: String?, description: String?, tags: [String]) {
+    private func parseTextResponse(_ response: String) -> (title: String?, summary: String?, tags: [String], category: String?, whatIsIt: String?, whyAdvantageous: String?) {
         var title: String? = nil
-        var description: String? = nil
+        var summary: String? = nil
         var tags: [String] = []
+        var category: String? = nil
+        var whatIsIt: String? = nil
+        var whyAdvantageous: String? = nil
         
         let lines = response.components(separatedBy: .newlines)
         
@@ -190,23 +206,43 @@ class URLExtractionTests: XCTestCase {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty { continue }
             
-            if title == nil && trimmed.lowercased().hasPrefix("title:") {
-                title = String(trimmed.dropFirst(6)).trimmingCharacters(in: .whitespaces)
+            let lower = trimmed.lowercased()
+            
+            if title == nil && (lower.hasPrefix("title:") || lower.hasPrefix("1. title:")) {
+                title = getValue(from: trimmed, prefix: "title:")
             }
             
-            if description == nil && trimmed.lowercased().hasPrefix("description:") {
-                description = String(trimmed.dropFirst(12)).trimmingCharacters(in: .whitespaces)
+            if summary == nil && (lower.hasPrefix("summary:") || lower.hasPrefix("2. summary:")) {
+                summary = getValue(from: trimmed, prefix: "summary:")
             }
             
-            if trimmed.lowercased().hasPrefix("tags:") {
-                let tagsString = String(trimmed.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+            if whatIsIt == nil && (lower.hasPrefix("what is it:") || lower.hasPrefix("3. what is it:")) {
+                whatIsIt = getValue(from: trimmed, prefix: "what is it:")
+            }
+            
+            if whyAdvantageous == nil && (lower.hasPrefix("why it is useful:") || lower.hasPrefix("4. why it is useful:")) {
+                whyAdvantageous = getValue(from: trimmed, prefix: "why it is useful:")
+            }
+            
+            if category == nil && (lower.hasPrefix("category:") || lower.hasPrefix("5. category:")) {
+                category = getValue(from: trimmed, prefix: "category:")
+            }
+            
+            if lower.hasPrefix("tags:") || lower.hasPrefix("6. tags:") {
+                let tagsString = getValue(from: trimmed, prefix: "tags:") ?? ""
                 tags = tagsString.components(separatedBy: ",")
                     .map { $0.trimmingCharacters(in: .whitespaces) }
                     .filter { !$0.isEmpty }
             }
         }
         
-        return (title, description, tags)
+        return (title, summary, tags, category, whatIsIt, whyAdvantageous)
     }
-}
+    
+    private func getValue(from line: String, prefix: String) -> String? {
+        if let range = line.range(of: prefix, options: .caseInsensitive) {
+            return String(line[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+        }
+        return nil
+    }
 

@@ -141,17 +141,17 @@ class ShareViewController: UIViewController {
         try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
         
         // Capture extensionContext on main actor before detached task
-        let context = await MainActor.run { extensionContext }
+        let context = extensionContext
         
         // Save URL to shared UserDefaults - main app will process it
         // Initialize UserDefaults fully asynchronously to avoid blocking
         let suiteName = "group.com.piotrlaczkowski.NotesApp"
         let urlString = url.absoluteString
         
-        await Task.detached(priority: .userInitiated) {
+        Task.detached(priority: .userInitiated) {
             guard let sharedDefaults = UserDefaults(suiteName: suiteName) else {
                 print("Warning: App Group UserDefaults not available")
-                Task { @MainActor in
+                await MainActor.run {
                     context?.completeRequest(returningItems: nil)
                 }
                 return
@@ -162,16 +162,16 @@ class ShareViewController: UIViewController {
             // Don't call synchronize() - it blocks and iOS handles persistence automatically
             
             // Post notification on main thread
-            Task { @MainActor in
+            await MainActor.run {
                 NotificationCenter.default.post(name: NSNotification.Name("NewURLShared"), object: nil)
                 
                 // Try to open the app, but don't rely on it working
                 // iOS security may prevent automatic switching
                 if let appURL = URL(string: "notesapp://open") {
                     print("Extension: Attempting to open app with URL scheme")
-                    context?.open(appURL) { success in
+                    context?.open(appURL, completionHandler: { success in
                         print("Extension: URL scheme open result: \(success)")
-                    }
+                    })
                 }
             }
         }

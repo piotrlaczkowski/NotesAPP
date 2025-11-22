@@ -8,6 +8,8 @@ struct Note: Identifiable, Codable, Equatable {
     var url: URL?
     var tags: [String]
     var category: String?
+    var whatIsIt: String?
+    var whyAdvantageous: String?
     var dateCreated: Date
     var dateModified: Date
     var syncStatus: SyncStatus
@@ -20,6 +22,8 @@ struct Note: Identifiable, Codable, Equatable {
         url: URL? = nil,
         tags: [String] = [],
         category: String? = nil,
+        whatIsIt: String? = nil,
+        whyAdvantageous: String? = nil,
         dateCreated: Date = Date(),
         dateModified: Date = Date(),
         syncStatus: SyncStatus = .pending
@@ -31,6 +35,8 @@ struct Note: Identifiable, Codable, Equatable {
         self.url = url
         self.tags = tags
         self.category = category
+        self.whatIsIt = whatIsIt
+        self.whyAdvantageous = whyAdvantageous
         self.dateCreated = dateCreated
         self.dateModified = dateModified
         self.syncStatus = syncStatus

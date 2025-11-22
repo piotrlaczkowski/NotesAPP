@@ -783,13 +783,18 @@ struct ReviewNoteView: View {
         // If note.tags is empty but userModifiedTags is true, keep it empty (user cleared them)
         // Otherwise, use note.tags which contains the current state
         let tagsToUse = note.tags // Always use current note.tags to preserve user changes
+        
+        // Update note with editable fields
+        note.whatIsIt = editableWhatIsIt.isEmpty ? nil : editableWhatIsIt
+        note.whyAdvantageous = editableWhyAdvantageous.isEmpty ? nil : editableWhyAdvantageous
+        
         let updatedAnalysis = NoteAnalysis(
             title: note.title,
             summary: note.summary,
             tags: tagsToUse, // Always use current note.tags to preserve user changes
             category: note.category ?? analysis.category,
-            whatIsIt: editableWhatIsIt.isEmpty ? nil : editableWhatIsIt,
-            whyAdvantageous: editableWhyAdvantageous.isEmpty ? nil : editableWhyAdvantageous
+            whatIsIt: note.whatIsIt,
+            whyAdvantageous: note.whyAdvantageous
         )
         analysis = updatedAnalysis
         appState.pendingNoteAnalysis = updatedAnalysis

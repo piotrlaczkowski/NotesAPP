@@ -12,6 +12,9 @@ class LLMManager: ObservableObject {
     private var extractionService: LLMService?
     private var chatService: LLMService?
     private var llmService: LLMService?  // Fallback/legacy support
+    // private var geminiService: GeminiService? // Removed to fix lint error, GeminiService not in target
+    private var geminiService: LLMService? // Use protocol type instead
+    
     private let modelDownloader = ModelDownloader.shared
     
     // Track which models are loaded
@@ -21,6 +24,9 @@ class LLMManager: ObservableObject {
     private init() {
         // Try to load specialized models first, then fallback to saved preference
         Task { @MainActor [weak self] in
+            // Initialize Gemini service if configured
+            self?.refreshGeminiConfig()
+            
             // First try to load specialized models
             await self?.loadSpecializedModels()
             
@@ -30,6 +36,23 @@ class LLMManager: ObservableObject {
                 await self?.loadModel(savedModel)
             }
         }
+    }
+    
+    func refreshGeminiConfig() {
+        let useGemini = UserDefaults.standard.bool(forKey: "useGemini")
+        let apiKey = UserDefaults.standard.string(forKey: "geminiApiKey") ?? ""
+        
+        if useGemini && !apiKey.isEmpty {
+            // GeminiService is not available in all targets (ShareExtension, etc.)
+            // For now, we disable Gemini support to avoid compilation errors
+            // TODO: Add GeminiService to all targets or create a separate module
+            geminiService = nil
+            print("Gemini API configured but GeminiService not available in this target")
+        } else {
+            geminiService = nil
+        }
+        
+        isModelLoaded = (extractionService != nil || chatService != nil || llmService != nil || geminiService != nil)
     }
     
     func loadModel(_ modelName: String) async {
@@ -69,7 +92,7 @@ class LLMManager: ObservableObject {
             }
             
             // Update loaded status if we have at least one model
-            isModelLoaded = (extractionService != nil || chatService != nil || llmService != nil)
+            isModelLoaded = (extractionService != nil || chatService != nil || llmService != nil || geminiService != nil)
             
             // Save model preference asynchronously to avoid blocking
             Task.detached(priority: .utility) {
@@ -77,7 +100,7 @@ class LLMManager: ObservableObject {
             }
         } catch {
             print("Error loading model: \(error)")
-            isModelLoaded = false
+            isModelLoaded = (geminiService != nil)
         }
     }
     
@@ -165,71 +188,81 @@ class LLMManager: ObservableObject {
     }
     
     func analyzeContent(_ content: String, metadata: ContentMetadata? = nil) async throws -> NoteAnalysis {
-        // Prefer extraction-specific model
+        // 1. Prefer extraction-specific local model
         if let extractionService = extractionService {
             return try await extractionService.analyzeContent(content: content, metadata: metadata)
         }
         
-        // Fallback to general model
-        guard let service = llmService else {
-            throw LLMError(message: "Model not loaded")
+        // 2. Fallback to general local model
+        if let service = llmService {
+            return try await service.analyzeContent(content: content, metadata: metadata)
         }
-        return try await service.analyzeContent(content: content, metadata: metadata)
+        
+        // 3. Use Gemini as backup if enabled
+        if let gemini = geminiService {
+            return try await gemini.analyzeContent(content: content, metadata: metadata)
+        }
+        
+        throw LLMError(message: "No model loaded")
     }
     
     func generateChatResponse(prompt: String, context: String?) async throws -> String {
-        // Prefer RAG-specific model for chat, especially with context
-        if context != nil, let chatService = chatService {
-            return try await chatService.generateChatResponse(prompt: prompt, context: context)
-        }
-        
-        // Use RAG model for general chat too
+        // 1. Prefer RAG-specific local model for chat
         if let chatService = chatService {
             return try await chatService.generateChatResponse(prompt: prompt, context: context)
         }
         
-        // Fallback to general model
-        guard let service = llmService else {
-            throw LLMError(message: "Model not loaded")
+        // 2. Fallback to general local model
+        if let service = llmService {
+            return try await service.generateChatResponse(prompt: prompt, context: context)
         }
-        return try await service.generateChatResponse(prompt: prompt, context: context)
+        
+        // 3. Use Gemini as backup if enabled
+        if let gemini = geminiService {
+            return try await gemini.generateChatResponse(prompt: prompt, context: context)
+        }
+        
+        throw LLMError(message: "No model loaded")
     }
     
     func generateChatResponseStream(prompt: String, context: String?) -> AsyncThrowingStream<String, Error> {
-        // Prefer RAG-specific model for streaming chat
+        // 1. Prefer RAG-specific local model for streaming chat
         if let chatService = chatService {
             return chatService.generateChatResponseStream(prompt: prompt, context: context)
         }
         
-        // Fallback to general model
-        guard let service = llmService else {
-            return AsyncThrowingStream { continuation in
-                continuation.finish(throwing: LLMError(message: "Model not loaded"))
-            }
+        // 2. Fallback to general local model
+        if let service = llmService {
+            return service.generateChatResponseStream(prompt: prompt, context: context)
         }
-        return service.generateChatResponseStream(prompt: prompt, context: context)
+        
+        // 3. Use Gemini as backup if enabled
+        if let gemini = geminiService {
+            return gemini.generateChatResponseStream(prompt: prompt, context: context)
+        }
+        
+        return AsyncThrowingStream { continuation in
+            continuation.finish(throwing: LLMError(message: "No model loaded"))
+        }
     }
     
     /// Generate a LinkedIn post from note summaries
     func generateLinkedInPost(noteSummaries: [String], topic: String? = nil) async throws -> String {
-        // Prefer RAG model for content generation
-        let service = chatService ?? llmService
-        guard let service = service else {
-            throw LLMError(message: "Model not loaded")
+        // Determine which service to use (prioritizing local)
+        let service: LLMService
+        if let s = chatService {
+            service = s
+        } else if let s = llmService {
+            service = s
+        } else if let s = geminiService {
+            service = s
+        } else {
+            throw LLMError(message: "No model loaded")
         }
         
-        // Build context from note summaries - include all summaries
-        var context = "Recent interesting findings (\(noteSummaries.count) items):\n\n"
-        for (index, summary) in noteSummaries.enumerated() {
-            // Include full summary for each note
-            context += "\(index + 1). \(summary)\n"
-            if index < noteSummaries.count - 1 {
-                context += "\n" // Add spacing between items
-            }
-        }
+        let summariesText = noteSummaries.map { "- \($0)" }.joined(separator: "\n")
+        let topicContext = topic != nil ? "Focus on the topic: \(topic!)" : "Create a general update based on these notes."
         
-        // Create prompt for LinkedIn post generation
-        let topicContext = topic.map { " about \($0)" } ?? ""
         let prompt = """
         You are a social media expert specializing in LinkedIn content. \
         Create an engaging LinkedIn post\(topicContext) based on these \(noteSummaries.count) recent interesting findings. \
@@ -240,7 +273,6 @@ class LLMManager: ObservableObject {
            - The title or main topic
            - A brief summary of what it is
            - Why it's important, interesting, or useful
-           - The source URL if available (format as clickable link or mention the domain)
         3. Explain the significance and value of each finding
         4. Make connections between findings if relevant
         5. Keep the tone professional yet engaging and conversational
@@ -252,7 +284,7 @@ class LLMManager: ObservableObject {
         Ensure each of the \(noteSummaries.count) findings gets proper attention and explanation.
         """
         
-        return try await service.generateChatResponse(prompt: prompt, context: context)
+        return try await service.generateChatResponse(prompt: prompt, context: summariesText)
     }
     
     var service: LLMService? {

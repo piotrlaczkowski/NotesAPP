@@ -561,7 +561,7 @@ class URLExtractionTestRunner: ObservableObject {
                     let errorResult = TestResult(
                         number: number,
                         url: url,
-                        extracted: URLMetadata(title: nil, description: nil, tags: []),
+                        extracted: URLMetadata(title: nil, summary: nil, tags: [], category: nil, whatIsIt: nil, whyAdvantageous: nil),
                         expected: expectedResults[number],
                         titleMatch: false,
                         descMatch: false,

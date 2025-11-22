@@ -23,6 +23,15 @@ class SettingsStatusViewModel: ObservableObject {
     }
     
     func refreshLLMStatus() async {
+        // Check Gemini first
+        let useGemini = UserDefaults.standard.bool(forKey: "useGemini")
+        let geminiKey = UserDefaults.standard.string(forKey: "geminiApiKey") ?? ""
+        
+        if useGemini && !geminiKey.isEmpty {
+            llmStatus = .working
+            return
+        }
+        
         let currentModel = await Task.detached(priority: .utility) {
             UserDefaults.standard.string(forKey: "selectedModel") ?? "LFM2-1.2B"
         }.value

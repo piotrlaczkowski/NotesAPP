@@ -823,6 +823,8 @@ class HomeViewModel: ObservableObject {
                 url: url,
                 tags: analysis.tags,
                 category: analysis.category,
+                whatIsIt: analysis.whatIsIt,
+                whyAdvantageous: analysis.whyAdvantageous,
                 syncStatus: .pending
             )
             
